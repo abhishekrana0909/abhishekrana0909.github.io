@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Abhishek Rana · Web Developer, Mohali</title>
+<meta name="description" content="Abhishek Rana builds fast, animated, mobile-first websites for businesses. Ex truck driver in Dubai, family paint business in Punjab, now a web developer in Mohali.">
+<meta name="theme-color" content="#050505">
+<meta property="og:title" content="Abhishek Rana · Web Developer, Mohali">
+<meta property="og:description" content="Websites that make a business look as serious as it is.">
+<meta property="og:image" content="https://abhishekrana0909.github.io/images/og.jpg">
+<meta property="og:type" content="website">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Tiro+Devanagari+Hindi&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css?v=2">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js"}}</script>
+</head>
+<body class="is-loading">
+
+<!-- LOADER -->
+<div class="loader" id="loader" aria-hidden="true">
+  <div class="loader__glow"></div>
+  <div class="loader__word" id="loaderWord"></div>
+  <div class="loader__foot"><span>Mohali, Punjab</span><span id="loaderCount">000</span></div>
+</div>
+
+<!-- CURSOR -->
+<div class="cursor" id="cursor"><div class="cursor__dot"></div><div class="cursor__pill" id="cursorPill"></div></div>
+
+<!-- NAV -->
+<header class="nav" id="nav">
+  <a href="#top" class="nav__logo" data-cursor="Home">ABHISHEK&nbsp;RANA</a>
+  <nav class="nav__links">
+    <a href="#journey">Journey</a>
+    <a href="#services">Services</a>
+    <a href="#work">Work</a>
+    <a href="#contact">Contact</a>
+  </nav>
+  <button class="sound" id="soundBtn" aria-pressed="false" aria-label="Toggle sound" data-cursor="Sound">
+    <span class="sound__bars"><i></i><i></i><i></i><i></i></span><span class="sound__label" id="soundLabel">Sound off</span>
+  </button>
+</header>
+
+<main id="top">
+
+<!-- HERO -->
+<section class="hero" id="hero">
+  <canvas class="hero__canvas" id="heroCanvas"></canvas>
+  <img class="hero__fallback" id="heroFallback" src="images/abhishek.webp" alt="Abhishek Rana in a black suit" width="887" height="1216">
+  <div class="hero__top">
+    <p class="hero__avail"><span class="dot"></span>Available for new projects</p>
+    <p class="hero__loc">30.70° N, 76.71° E<br>Mohali, Punjab</p>
+  </div>
+  <div class="hero__name">
+    <h1 class="chrome" id="heroName"><span>ABHISHEK</span></h1>
+    <div class="hero__sub">
+      <p class="hero__role"><em>Web Developer</em> · Mohali</p>
+      <p class="hero__line">Websites that make a business look as serious as it is.</p>
+    </div>
+  </div>
+  <div class="fcursor fcursor--a" id="fcA"><svg viewBox="0 0 16 16"><path d="M1 1l13 5-5.5 2L6.5 14z"/></svg><span>You</span></div>
+  <div class="fcursor fcursor--b" id="fcB"><svg viewBox="0 0 16 16"><path d="M1 1l13 5-5.5 2L6.5 14z"/></svg><span>Abhishek</span></div>
+  <div class="hero__scroll"><span>Scroll</span><i></i></div>
+  <p class="hero__hint">Move your mouse over me</p>
+</section>
+
+<!-- INTRO -->
+<section class="intro" id="intro">
+  <p class="label">( Intro )</p>
+  <p class="intro__big" id="introBig">I drove trucks in Dubai, sold paint in Punjab, and now I build websites in Mohali. Every one of those jobs taught me the same thing: <em>a business lives on trust.</em> My sites are built to earn it in the first five seconds.</p>
+  <div class="intro__stats">
+    <div><b data-count="8">0</b><span>Live websites</span></div>
+    <div><b data-count="2">0</b><span>Countries worked in</span></div>
+    <div><b data-count="1">0</b><span>Family business I run</span></div>
+    <div><b>1:1</b><span>You talk to me directly</span></div>
+  </div>
+</section>
+
+<!-- JOURNEY -->
+<section class="journey" id="journey">
+  <div class="journey__track" id="journeyTrack">
+    <div class="jpanel jpanel--intro">
+      <p class="label">( Journey )</p>
+      <h2 class="jpanel__title">Three roads.<br><em>One direction.</em></h2>
+      <p class="jpanel__note">Scroll to travel</p>
+    </div>
+
+    <article class="jpanel jpanel--road">
+      <div class="road" aria-hidden="true"><div class="road__plane"></div></div>
+      <div class="jpanel__meta"><span>Chapter 01</span><span>Dubai, UAE</span></div>
+      <h3 class="jpanel__place outline">DUBAI</h3>
+      <div class="jpanel__body">
+        <h4>The Road</h4>
+        <p>I started behind the wheel of a truck in the UAE. Long hours, hard deadlines, no excuses. The road taught me discipline: you deliver, on time, every time.</p>
+      </div>
+    </article>
+
+    <article class="jpanel jpanel--shop">
+      <div class="swatches" aria-hidden="true" id="swatches"></div>
+      <div class="jpanel__meta"><span>Chapter 02</span><span>Passi Kandi, Punjab</span></div>
+      <h3 class="jpanel__place outline">PUNJAB</h3>
+      <div class="jpanel__body">
+        <h4>The Shop</h4>
+        <p>Back home I joined our family store, Rana Paint Hardware &amp; Cement. Talking to customers every day showed me what a business really needs: trust, clarity, and a phone that rings.</p>
+      </div>
+    </article>
+
+    <article class="jpanel jpanel--code">
+      <pre class="codefall" aria-hidden="true" id="codefall"></pre>
+      <div class="jpanel__meta"><span>Chapter 03</span><span>Mohali, Punjab</span></div>
+      <h3 class="jpanel__place outline">MOHALI</h3>
+      <div class="jpanel__body">
+        <h4>The Code</h4>
+        <p>Now I build websites. Fast, animated, mobile-first sites for businesses that want to be taken seriously. Same discipline. New road.</p>
+      </div>
+    </article>
+  </div>
+  <div class="journey__line"><i id="journeyLine"></i></div>
+</section>
+
+<!-- SERVICES -->
+<section class="services" id="services">
+  <div class="services__head">
+    <p class="label">( Services )</p>
+    <h2 class="h2">What I can<br><span class="chrome">build for you</span></h2>
+  </div>
+  <ol class="slist" id="slist">
+    <li class="srow" data-cursor="Let's talk" data-msg="Namaste Abhishek, mujhe apne business ke liye website chahiye.">
+      <span class="srow__n">01</span><h3>Business websites</h3>
+      <p>A clean, fast site for your shop, clinic, studio or company. Shows up on Google, opens fast on any phone, and turns visitors into WhatsApp messages.</p><span class="srow__arrow">↗</span>
+    </li>
+    <li class="srow" data-cursor="Let's talk" data-msg="Namaste Abhishek, mujhe ek premium animated website chahiye.">
+      <span class="srow__n">02</span><h3>Premium animated sites</h3>
+      <p>Loaders, scroll stories, 3D and motion like this page. For brands, portfolios and launches that need people to stop scrolling.</p><span class="srow__arrow">↗</span>
+    </li>
+    <li class="srow" data-cursor="Let's talk" data-msg="Namaste Abhishek, mujhe apni purani website redesign karwani hai.">
+      <span class="srow__n">03</span><h3>Website redesign</h3>
+      <p>Old site that looks tired or loads slow? I rebuild it with a modern design, better speed and copy that actually sells.</p><span class="srow__arrow">↗</span>
+    </li>
+    <li class="srow" data-cursor="Let's talk" data-msg="Namaste Abhishek, mujhe catalogue / WhatsApp order wali website chahiye.">
+      <span class="srow__n">04</span><h3>Catalogue &amp; WhatsApp order sites</h3>
+      <p>Your products or shades in a browsable catalogue. Customers pick what they like and send the list straight to your WhatsApp. Built from running my own shop.</p><span class="srow__arrow">↗</span>
+    </li>
+  </ol>
+</section>
+
+<!-- WORK -->
+<section class="work" id="work">
+  <div class="work__stage" id="workStage">
+    <div class="work__head">
+      <p class="label">( Selected work · <span id="workIdx">01</span> / 08 )</p>
+      <h2 class="work__title chrome" id="workTitle">Rana Paints</h2>
+      <p class="work__cat" id="workCat">Paint &amp; hardware store</p>
+    </div>
+    <div class="work__world" id="workWorld"></div>
+    <div class="work__bar"><i id="workBar"></i></div>
+  </div>
+</section>
+
+<!-- PLAY -->
+<section class="play" id="play">
+  <div class="play__head">
+    <p class="label">( Break it if you can )</p>
+    <p class="play__count">Pixels pushed <b id="playCount">0</b></p>
+  </div>
+  <canvas class="play__canvas" id="playCanvas" data-cursor="Click"></canvas>
+  <p class="play__tip">Move through the dots. Click to blast them. They always come back, like a good website.</p>
+</section>
+
+<!-- CONTACT -->
+<section class="contact" id="contact">
+  <p class="label">( Contact )</p>
+  <h2 class="contact__big">Let's build<br>something <em>dhaansu.</em></h2>
+  <p class="contact__sub">Tell me about your business on WhatsApp. No agency, no middlemen: you talk to the person who builds it.</p>
+  <div class="contact__btns">
+    <a class="cbtn cbtn--main magnet" data-cursor="Chat" target="_blank" rel="noopener" href="https://wa.me/919876963879?text=Namaste%20Abhishek%2C%20mujhe%20website%20banwani%20hai.">WhatsApp me <span>↗</span></a>
+    <a class="cbtn magnet" data-cursor="Call" href="tel:+919876963879">Call +91 98769 63879</a>
+    <a class="cbtn magnet" data-cursor="Mail" href="mailto:ranaabhi368@gmail.com">ranaabhi368@gmail.com</a>
+    <a class="cbtn magnet" data-cursor="Code" target="_blank" rel="noopener" href="https://github.com/abhishekrana0909">GitHub</a>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <span>© 2026 Abhishek Rana</span>
+  <span>Mohali <b id="clock">--:--</b> IST</span>
+  <a href="#top" data-cursor="Top">Back to top ↑</a>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+<script src="https://unpkg.com/lenis@1.1.13/dist/lenis.min.js"></script>
+<script type="module" src="js/main.js?v=2"></script>
+</body>
+</html>
