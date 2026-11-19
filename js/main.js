@@ -9,83 +9,71 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const wait = s => new Promise(r => gsap.delayedCall(s, r));
 gsap.registerPlugin(ScrollTrigger);
 
-/* ================= SOUND (WebAudio, no files) ================= */
+/* ================= SOUND (WebAudio, no files) =================
+   Only two places make sound: the intro name typing and the 8 website slides. */
 const Sound = (() => {
-  let ctx, master, out, noise, on = false, padOn = false;
+  let ctx, out, master, noise, on = true;
   const init = () => {
     if (ctx) return;
     ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
-    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 4;
-    master = ctx.createGain(); master.gain.value = 0;
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4;
+    master = ctx.createGain(); master.gain.value = on ? 1 : 0;
     out = comp; comp.connect(master).connect(ctx.destination);
     noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   };
-  const ok = () => on && ctx;
-  const tone = (f = 880, d = 0.12, v = 0.05, type = 'sine', at = 0, drop = 0.6) => {
-    if (!ok()) return;
-    const t = ctx.currentTime + at, o = ctx.createOscillator(), g = ctx.createGain();
-    o.type = type; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(Math.max(30, f * drop), t + d);
-    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(v, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-    o.connect(g).connect(out); o.start(t); o.stop(t + d + 0.05);
+  const ok = () => on && ctx && ctx.state === 'running';
+  const osc = (type, f, t, d, v, f2) => {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + d);
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(v, t + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(g).connect(out); o.start(t); o.stop(t + d + 0.03);
   };
-  const burst = (freq, d, v, type = 'bandpass', q = 1, at = 0, sweepTo = 0) => {
-    if (!ok()) return;
-    const t = ctx.currentTime + at, src = ctx.createBufferSource(); src.buffer = noise;
-    const f = ctx.createBiquadFilter(); f.type = type; f.Q.value = q; f.frequency.setValueAtTime(freq, t);
-    if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t + d);
-    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(v, t + Math.min(0.25, d * 0.35)); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-    src.connect(f).connect(g).connect(out); src.start(t, Math.random() * 0.5, d + 0.05);
+  const nz = (type, f, t, d, v, q = 1, f2 = 0) => {
+    const src = ctx.createBufferSource(); src.buffer = noise;
+    const fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.setValueAtTime(f, t); fl.Q.value = q; if (f2) fl.frequency.exponentialRampToValueAtTime(f2, t + d);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(v, t + Math.min(0.12, d * 0.3)); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    src.connect(fl).connect(g).connect(out); src.start(t, Math.random() * 0.5, d + 0.05);
   };
-  const S = {
+  return {
     get on() { return on; },
+    unlock() { init(); if (ctx.state !== 'running') ctx.resume(); },
     enable(v) {
-      init(); ctx.resume(); on = v;
+      on = v; init(); ctx.resume();
       master.gain.cancelScheduledValues(ctx.currentTime);
-      master.gain.linearRampToValueAtTime(v ? 1 : 0, ctx.currentTime + 0.3);
-      if (v && !padOn) pad();
+      master.gain.linearRampToValueAtTime(v ? 1 : 0, ctx.currentTime + 0.2);
       return on;
     },
-    blip: (f = 1500, d = 0.035, v = 0.02) => tone(f, d, v),
-    click: () => { tone(620, 0.08, 0.04, 'triangle'); },
-    whoosh: (d = 0.8, v = 0.09, from = 300, to = 3200) => burst(from, d, v, 'bandpass', 1.1, 0, to),
-    swoosh: (d = 1.1, v = 0.1) => burst(2800, d, v, 'bandpass', 0.9, 0, 220),
-    hello: () => { [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, 1.6, 0.03, 'sine', i * 0.09, 1)); },
-    lang: i => { const scale = [587.33, 659.25, 739.99, 880, 987.77, 1108.7, 1318.5]; tone(scale[i % 7], 0.5, 0.035, 'sine', 0, 1); tone(scale[i % 7] * 2, 0.25, 0.01, 'sine', 0, 1); },
-    chime: () => { [392, 587.33, 783.99, 1174.66].forEach((f, i) => tone(f, 2.2, 0.045, 'sine', i * 0.06, 1)); burst(6000, 1.2, 0.02, 'highpass', 0.7); },
-    assemble: (d = 3.2) => {
+    // robotic, computer-terminal key
+    type(final = false) {
       if (!ok()) return;
-      burst(200, d, 0.07, 'bandpass', 0.8, 0, 5200);
-      for (let i = 0; i < 70; i++) { const at = Math.pow(Math.random(), 0.7) * d; tone(rand(1800, 5200) * (0.6 + at / d), 0.05, rand(0.006, 0.016), 'sine', at, 0.8); }
-      [261.63, 392, 523.25].forEach((f, i) => tone(f, 2.6, 0.035, 'sine', d * 0.78 + i * 0.05, 1));
+      const t = ctx.currentTime + 0.002, f = [880, 988, 1175, 1319, 1480][(Math.random() * 5) | 0];
+      osc('square', f, t, 0.045, 0.045);
+      osc('sine', f * 2.01, t, 0.03, 0.02);
+      nz('highpass', 5200, t, 0.012, 0.09, 0.7);
+      nz('bandpass', 1800, t + 0.004, 0.03, 0.05, 6);
+      if (final) { osc('square', 220, t + 0.02, 0.12, 0.03, 110); osc('sine', 1760, t + 0.03, 0.25, 0.02); }
     },
-    thock: (wide = false) => {
+    glitch() {
       if (!ok()) return;
-      const p = rand(0.92, 1.08);
-      burst(4200 * p, 0.006, 0.05, 'highpass', 0.7);
-      burst((wide ? 480 : 650) * p, wide ? 0.07 : 0.05, 0.32, 'bandpass', 1.3, 0.002);
-      tone((wide ? 180 : 240) * p, wide ? 0.08 : 0.06, 0.4, 'sine', 0.001, 0.44);
+      const t = ctx.currentTime + 0.002;
+      for (let i = 0; i < 4; i++) osc('square', 300 + Math.random() * 1600, t + i * 0.018, 0.016, 0.03);
     },
-    tick: () => { tone(2400, 0.02, 0.02, 'square', 0, 0.9); },
+    sweep() { if (!ok()) return; const t = ctx.currentTime + 0.002; osc('sawtooth', 180, t, 0.55, 0.02, 1400); nz('bandpass', 400, t, 0.55, 0.05, 2, 3800); },
+    slide() {
+      if (!ok()) return;
+      const t = ctx.currentTime + 0.002;
+      nz('bandpass', 500, t, 0.45, 0.06, 1.2, 2600);
+      osc('square', 1318.5, t + 0.05, 0.05, 0.025); osc('square', 1760, t + 0.1, 0.06, 0.02);
+    },
   };
-  function pad() {
-    padOn = true;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420;
-    const g = ctx.createGain(); g.gain.value = 0.02; lp.connect(g).connect(out);
-    [55, 82.41, 110.3].forEach((f, i) => { const o = ctx.createOscillator(); o.type = i ? 'triangle' : 'sine'; o.frequency.value = f; o.detune.value = rand(-6, 6); o.connect(lp); o.start(); });
-    const lfo = ctx.createOscillator(), lg = ctx.createGain(); lfo.frequency.value = 0.07; lg.gain.value = 180; lfo.connect(lg).connect(lp.frequency); lfo.start();
-  }
-  return S;
 })();
 
 const soundBtn = $('#soundBtn');
 const setSoundUI = on => { soundBtn.classList.toggle('on', on); soundBtn.setAttribute('aria-pressed', on); $('#soundLabel').textContent = on ? 'Sound on' : 'Sound off'; };
+setSoundUI(true);
 soundBtn.addEventListener('click', () => setSoundUI(Sound.enable(!Sound.on)));
-document.addEventListener('mouseover', e => {
-  const t = e.target.closest('a,button,.srow,.wcard');
-  if (t && !t.contains(e.relatedTarget)) Sound.blip();
-});
-document.addEventListener('pointerdown', e => { if (!e.target.closest('.key,.play__canvas,.gate')) Sound.click(); });
+['pointerdown', 'keydown', 'touchend'].forEach(ev => addEventListener(ev, () => Sound.unlock(), { passive: true }));
 
 /* ================= CURSOR ================= */
 const cursor = $('#cursor'), pill = $('#cursorPill');
@@ -114,7 +102,7 @@ gsap.ticker.lagSmoothing(0);
 lenis.stop();
 $$('a[href^="#"]').forEach(a => a.addEventListener('click', e => {
   const id = a.getAttribute('href'); const el = id === '#top' ? 0 : $(id);
-  if (el === null) return; e.preventDefault(); Sound.whoosh(0.7, 0.05); lenis.scrollTo(el, { duration: 1.6 });
+  if (el === null) return; e.preventDefault(); lenis.scrollTo(el, { duration: 1.6 });
 }));
 
 /* ================= HERO PARTICLES ================= */
@@ -130,10 +118,10 @@ const Hero = (() => {
   camera.position.z = 5;
   const uniforms = {
     uTime: { value: 0 }, uIntro: { value: reduce ? 1 : 0 }, uScatter: { value: 0 },
-    uMouse: { value: new THREE.Vector2(9, 9) }, uMouseStr: { value: 0 }, uSize: { value: 10 }, uPR: { value: pr },
+    uMouse: { value: new THREE.Vector2(9, 9) }, uVel: { value: new THREE.Vector2() }, uMouseStr: { value: 0 }, uSize: { value: 10 }, uPR: { value: pr },
   };
   const vert = `
-    uniform float uTime,uIntro,uScatter,uSize,uPR,uMouseStr; uniform vec2 uMouse;
+    uniform float uTime,uIntro,uScatter,uSize,uPR,uMouseStr; uniform vec2 uMouse,uVel;
     attribute vec3 aStart; attribute float aLum,aSeed;
     varying float vLum,vA,vHole;
     void main(){
@@ -144,9 +132,10 @@ const Hero = (() => {
       p.x += sin(uTime*1.3 + aSeed*40.)*(0.0012 + settle*0.02);
       p.y += cos(uTime*1.1 + aSeed*31.)*(0.0012 + settle*0.02);
       vec2 d = p.xy - uMouse; float dist = length(d);
-      float f = smoothstep(0.24, 0.0, dist) * uMouseStr * t;
-      p.xy += normalize(d + 1e-5) * f * 0.14;
-      p.z += f * (0.1 + aSeed*0.3);
+      float f = smoothstep(0.1, 0.0, dist) * uMouseStr * t;
+      vec2 swirl = vec2(sin(aSeed*91. + uTime*4.), cos(aSeed*57. + uTime*3.3));
+      p.xy += (normalize(d + 1e-5) * 0.035 + swirl * 0.05 * aSeed + uVel * (0.4 + aSeed*1.6)) * f;
+      p.z += f * (0.15 + aSeed*0.9);
       p += (aStart - position) * uScatter * (0.35 + aSeed);
       vec4 mv = modelViewMatrix * vec4(p, 1.);
       gl_Position = projectionMatrix * mv;
@@ -160,7 +149,7 @@ const Hero = (() => {
       vec2 c = gl_PointCoord - .5; float r = length(c); if (r > .5) discard;
       float a = smoothstep(.5, .2, r);
       vec3 col = vec3(pow(vLum, .85));
-      gl_FragColor = vec4(col, a * (0.3 + vLum*0.7) * (0.15 + 0.85*vA) * (1. - vHole*0.75));
+      gl_FragColor = vec4(col * (1. + vHole*0.6), a * (0.3 + vLum*0.7) * (0.15 + 0.85*vA));
     }`;
   const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: vert, fragmentShader: frag, transparent: true, depthWrite: false, depthTest: false, blending: THREE.NormalBlending });
   const group = new THREE.Group(); scene.add(group);
@@ -212,6 +201,13 @@ const Hero = (() => {
     uniforms.uSize.value = (photoH / visH * h / rows) * camera.position.z * 1.15;
   }
   addEventListener('resize', resize);
+  const fadeMask = () => {
+    const hr = section.getBoundingClientRect(), tr = $('#heroName').getBoundingClientRect();
+    const a = tr.top - hr.top + tr.height * 0.35, b = tr.bottom - hr.top + 4;
+    const m = `linear-gradient(180deg,#000 0px,#000 ${a}px,transparent ${b}px)`;
+    canvas.style.webkitMaskImage = m; canvas.style.maskImage = m;
+  };
+  document.fonts.ready.then(fadeMask); addEventListener('resize', fadeMask); fadeMask();
 
   const target = new THREE.Vector2(9, 9), cur = new THREE.Vector2(9, 9);
   let strT = 0;
@@ -232,7 +228,8 @@ const Hero = (() => {
     if (!visible) return;
     const t = clock.getElapsedTime();
     uniforms.uTime.value = t;
-    cur.lerp(target, 0.12); uniforms.uMouse.value.copy(cur);
+    const px = cur.x, py = cur.y; cur.lerp(target, 0.18); uniforms.uMouse.value.copy(cur);
+    const v = uniforms.uVel.value; v.x += ((cur.x - px) * 3 - v.x) * 0.2; v.y += ((cur.y - py) * 3 - v.y) * 0.2; v.clampLength(0, 0.12);
     uniforms.uMouseStr.value += (strT - uniforms.uMouseStr.value) * 0.06;
     dust.rotation.y = t * 0.02; dust.position.y = Math.sin(t * 0.2) * 0.05;
     group.rotation.y = (mouse.x / innerWidth - 0.5) * 0.1; group.rotation.x = (mouse.y / innerHeight - 0.5) * -0.04;
@@ -242,7 +239,7 @@ const Hero = (() => {
   gsap.to(uniforms.uScatter, { value: 1, ease: 'none', scrollTrigger: { trigger: section, start: 'top top', end: 'bottom top', scrub: true } });
   return {
     ready,
-    intro(d = 3.4) { Sound.assemble(d * 0.9); gsap.fromTo(uniforms.uIntro, { value: reduce ? 1 : 0 }, { value: 1, duration: reduce ? 0.01 : d, ease: 'none' }); },
+    intro(d = 3.4) { gsap.fromTo(uniforms.uIntro, { value: reduce ? 1 : 0 }, { value: 1, duration: reduce ? 0.01 : d, ease: 'none' }); },
   };
 })();
 
@@ -295,85 +292,91 @@ function heroUI() {
   gsap.to(['.hero__sub', '.hero__top', '.hero__hint'], { opacity: 1, duration: 1, delay: 0.6, stagger: 0.12 });
   gsap.to('.fcursor', { opacity: 1, duration: 0.6, delay: 2.4, stagger: 0.3 });
   document.body.classList.remove('is-loading');
-  lenis.start(); ScrollTrigger.refresh();
+  lenis.start(); ScrollTrigger.sort(); ScrollTrigger.refresh();
 }
 
 const LANGS = [
   ['नमस्ते', 'hi'], ['ਸਤ ਸ੍ਰੀ ਅਕਾਲ', 'pa'], ['Hola', ''], ['Bonjour', ''], ['Ciao', ''], ['こんにちは', 'ja'], ['مرحبا', 'ar'],
 ];
+const ROBO = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#%&*/<>';
+
+async function typeLetter(span, ch, final = false) {
+  span.style.opacity = 1;
+  for (let k = 0; k < 2; k++) { span.textContent = ROBO[(Math.random() * ROBO.length) | 0]; await wait(0.03); }
+  span.textContent = ch; Sound.type(final);
+  gsap.fromTo(span, { filter: 'brightness(2.2)' }, { filter: 'brightness(1)', duration: 0.35 });
+}
 
 async function runLoader() {
   const loader = $('#loader'), word = $('#loaderWord'), glow = $('.loader__glow'), count = $('#loaderCount');
   const gate = $('#gate'), hello = $('#hello'), helloText = $('text', hello);
   if (reduce) { loader.remove(); gsap.set(heroH1, { opacity: 1 }); await Hero.ready; Hero.intro(); heroUI(); return; }
 
-  // gate: choose sound
+  // click to enter (browsers only allow sound after a click)
   gsap.fromTo(glow, { scale: 0 }, { scale: 1, duration: 0.8, ease: 'back.out(3)' });
   gsap.to(glow, { scale: 1.35, duration: 1.2, yoyo: true, repeat: -1, ease: 'sine.inOut' });
-  gsap.from(gate, { opacity: 0, y: 14, duration: 0.8, delay: 0.4 });
+  gsap.from(gate, { opacity: 0, y: 10, duration: 0.8, delay: 0.3 });
   await new Promise(res => {
     const go = withSound => { setSoundUI(Sound.enable(withSound)); res(); };
     $('#enterSound').addEventListener('click', () => go(true), { once: true });
-    $('#enterMute').addEventListener('click', () => go(false), { once: true });
+    $('#enterMute').addEventListener('click', e => { e.stopPropagation(); go(false); }, { once: true });
     const kd = e => { if (e.key === 'Enter') { removeEventListener('keydown', kd); go(true); } }; addEventListener('keydown', kd);
   });
-  Sound.whoosh(0.5, 0.05);
-  await gsap.to(gate, { opacity: 0, y: -10, duration: 0.35 }); gate.remove();
   gsap.killTweensOf(glow);
+  gsap.to(gate, { opacity: 0, duration: 0.25, onComplete: () => gate.remove() });
   const c = { v: 0 };
-  gsap.to(c, { v: 100, duration: 9.2, ease: 'power1.inOut', onUpdate: () => { count.textContent = String(Math.round(c.v)).padStart(3, '0'); } });
+  gsap.to(c, { v: 100, duration: 6, ease: 'power1.inOut', onUpdate: () => { count.textContent = String(Math.round(c.v)).padStart(3, '0'); } });
 
-  // 1. "hello" written in cursive (Apple style)
-  gsap.to(glow, { scale: 0.3, opacity: 0, duration: 0.6 });
+  // 1. greeting, about 3 seconds, silent
+  gsap.to(glow, { scale: 0.3, opacity: 0, duration: 0.4 });
   await document.fonts.load('230px Sacramento').catch(() => {});
-  const len = 2600;
   gsap.set(hello, { opacity: 1 });
-  gsap.set(helloText, { strokeDasharray: len, strokeDashoffset: len, fillOpacity: 0 });
-  Sound.hello();
-  await gsap.to(helloText, { strokeDashoffset: 0, duration: 1.9, ease: 'power1.inOut' });
-  await gsap.to(helloText, { fillOpacity: 1, duration: 0.4 });
-  await wait(0.35);
-  await gsap.to(hello, { opacity: 0, filter: 'blur(10px)', scale: 0.96, duration: 0.4 });
+  gsap.set(helloText, { strokeDasharray: 2600, strokeDashoffset: 2600, fillOpacity: 0 });
+  await gsap.to(helloText, { strokeDashoffset: 0, duration: 1, ease: 'power1.inOut' });
+  await gsap.to(helloText, { fillOpacity: 1, duration: 0.2 });
+  await wait(0.08);
+  await gsap.to(hello, { opacity: 0, filter: 'blur(8px)', duration: 0.18 });
   hello.remove();
-
-  // 2. hello in many languages
-  for (let i = 0; i < LANGS.length; i++) {
-    const [txt, cls] = LANGS[i];
+  for (const [txt, cls] of LANGS) {
     word.className = 'loader__word lang' + (cls ? ' lang-' + cls : ''); word.textContent = txt;
-    Sound.lang(i);
-    await gsap.fromTo(word, { opacity: 0, filter: 'blur(14px)', y: 10 }, { opacity: 1, filter: 'blur(0px)', y: 0, duration: 0.28, ease: 'power2.out' });
-    await wait(0.22);
-    await gsap.to(word, { opacity: 0, filter: 'blur(10px)', duration: 0.18 });
+    await gsap.fromTo(word, { opacity: 0, filter: 'blur(10px)' }, { opacity: 1, filter: 'blur(0px)', duration: 0.08 });
+    await wait(0.08);
+    await gsap.to(word, { opacity: 0, duration: 0.05 });
   }
 
-  // 3. ABHISHEK letters fly together
-  word.className = 'loader__word'; gsap.set(word, { opacity: 1, filter: 'blur(0px)', y: 0 });
+  // 2. ABHISHEK typed, robotic sound
+  word.className = 'loader__word name'; gsap.set(word, { opacity: 1, filter: 'none' });
   word.textContent = 'ABHISHEK';
   const chs = splitChars(word, 'chrome');
-  Sound.whoosh(1, 0.09);
-  await gsap.from(chs, {
-    x: () => rand(-innerWidth * 0.4, innerWidth * 0.4), y: () => rand(-innerHeight * 0.35, innerHeight * 0.35),
-    rotation: () => rand(-200, 200), scale: () => rand(0.2, 1.8), opacity: 0,
-    duration: 1.1, ease: 'expo.out', stagger: { each: 0.05, from: 'random' },
-  });
-  await wait(0.45);
+  chs.forEach(s => { s.style.opacity = 0; });
+  for (let i = 0; i < chs.length; i++) { await typeLetter(chs[i], 'ABHISHEK'[i], i === chs.length - 1); await wait(0.05); }
+  await wait(0.4);
 
-  // 4. ABHISHEK -> PORTFOLIO
-  word.textContent = 'ABHISHEK'; word.classList.add('chrome');
-  await scramble(word, 'PORTFOLIO', 0.9, () => Sound.tick());
-  word.classList.remove('chrome'); const pchs = splitChars(word, 'chrome');
-  Sound.chime();
-  await Promise.all([Hero.ready, wait(0.5)]);
+  // 3. keep only the I, it slides to PORTFOLIO's I
+  const iOld = chs[3], x0 = iOld.getBoundingClientRect().left;
+  Sound.glitch();
+  await gsap.to(chs.filter((_, i) => i !== 3), { opacity: 0, y: () => rand(-14, 14), filter: 'blur(6px)', duration: 0.35, stagger: 0.03 });
+  word.textContent = 'PORTFOLIO';
+  const pchs = splitChars(word, 'chrome');
+  pchs.forEach((s, i) => { if (i !== 7) s.style.opacity = 0; });
+  const x1 = pchs[7].getBoundingClientRect().left;
+  gsap.set(pchs[7], { x: x0 - x1 });
+  Sound.sweep();
+  await gsap.to(pchs[7], { x: 0, duration: 0.75, ease: 'expo.inOut' });
+
+  // 4. the rest of PORTFOLIO types in around the I
+  const order = [0, 1, 2, 3, 4, 5, 6, 8];
+  for (let k = 0; k < order.length; k++) { await typeLetter(pchs[order[k]], 'PORTFOLIO'[order[k]], k === order.length - 1); await wait(0.04); }
+  await Promise.all([Hero.ready, wait(0.45)]);
 
   // 5. PORTFOLIO glides into the hero, photo assembles
   const from = word.getBoundingClientRect(), to = heroH1.getBoundingClientRect();
   const sc = to.width / from.width;
   const dx = to.left + to.width / 2 - (from.left + from.width / 2), dy = to.top + to.height / 2 - (from.top + from.height / 2);
-  Sound.swoosh(1.2, 0.08);
-  Hero.intro(3.4);
+  Hero.intro(3.2);
   gsap.to(count.parentElement, { opacity: 0, duration: 0.4 });
-  gsap.to(loader, { backgroundColor: 'rgba(0,0,0,0)', duration: 1.4, ease: 'power2.inOut' });
-  await gsap.to(word, { x: dx, y: dy, scale: sc, duration: 1.4, ease: 'expo.inOut' });
+  gsap.to(loader, { backgroundColor: 'rgba(0,0,0,0)', duration: 1.3, ease: 'power2.inOut' });
+  await gsap.to(word, { x: dx, y: dy, scale: sc, duration: 1.3, ease: 'expo.inOut' });
   gsap.set(heroH1, { opacity: 1 });
   loader.remove();
   heroUI();
@@ -427,7 +430,7 @@ const Keyboard = (() => {
       if (k.hl) typeOrder.push(el);
       if (k.space) { el.dataset.space = 1; typeOrder.splice(4, 0, el); }
       const wide = (k.w || 1) >= 1.5;
-      el.addEventListener('pointerdown', () => { el.classList.add('down'); Sound.thock(wide); });
+      
       const up = () => el.classList.remove('down');
       el.addEventListener('pointerup', up); el.addEventListener('pointerleave', up);
       r.appendChild(el);
@@ -445,13 +448,13 @@ const Keyboard = (() => {
   addEventListener('keydown', e => {
     if (!inView || e.repeat) return;
     const ks = e.key === ' ' ? [spaceKey] : byLetter[e.key.toUpperCase()];
-    if (!ks) return; ks.forEach(k => k.classList.add('down')); Sound.thock(e.key === ' ');
+    if (!ks) return; ks.forEach(k => k.classList.add('down'));
     setTimeout(() => ks.forEach(k => k.classList.remove('down')), 140);
   });
   const typeAll = async () => {
     for (const k of seq) {
       if (!inView) return;
-      k.classList.add('down'); Sound.thock(k === spaceKey);
+      k.classList.add('down');
       await wait(0.09); k.classList.remove('down'); await wait(rand(0.08, 0.18));
     }
   };
@@ -512,7 +515,6 @@ const Keyboard = (() => {
     if (ci <= text.length) {
       cur.innerHTML = `<span class="ln">${lineNo}</span>${hl(text.slice(0, ci))}${caret}`;
       ci += text.length ? Math.ceil(rand(1, 3)) : 1;
-      if (ci % 3 === 0) Sound.tick();
       timer = setTimeout(step, rand(18, 55));
     } else {
       cur.innerHTML = `<span class="ln">${lineNo}</span>${hl(text)}`;
@@ -540,7 +542,6 @@ const Keyboard = (() => {
         trigger: '#journey', pin: true, scrub: 1, end: () => '+=' + dist(), invalidateOnRefresh: true,
         onUpdate: s => {
           gsap.set('#journeyLine', { scaleX: s.progress });
-          const p = Math.round(s.progress * 3); if (p !== lastPanel) { lastPanel = p; Sound.whoosh(0.6, 0.04, 400, 1800); }
         },
       },
     });
@@ -601,7 +602,7 @@ const PROJECTS = [
     gsap.fromTo(title, { opacity: 0, y: 24, filter: 'blur(6px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 0.6, ease: 'power3.out', onStart: () => { title.textContent = PROJECTS[i].name; } });
     gsap.fromTo(cat, { opacity: 0 }, { opacity: 1, duration: 0.6, delay: 0.1, onStart: () => { cat.textContent = PROJECTS[i].cat; } });
     idx.textContent = String(i + 1).padStart(2, '0');
-    Sound.whoosh(0.45, 0.035, 600, 2400);
+    Sound.slide();
     if (small()) return;
     cards.forEach((c, j) => {
       clearTimeout(c.timer);
@@ -636,7 +637,7 @@ const PROJECTS = [
   };
   let st;
   st = ScrollTrigger.create({
-    trigger: '#workStage', pin: true, start: 'top top', end: () => '+=' + innerHeight * N * 0.85, scrub: true,
+    trigger: '#workStage', pin: true, refreshPriority: -1, start: 'top top', end: () => '+=' + innerHeight * N * 0.85, scrub: true,
     onUpdate: s => update(s.progress),
   });
   update(0);
@@ -687,7 +688,7 @@ const PROJECTS = [
   cv.addEventListener('pointermove', pos);
   cv.addEventListener('pointerleave', () => { m.x = m.y = -999; });
   cv.addEventListener('pointerdown', e => {
-    pos(e); Sound.whoosh(0.5, 0.08, 200, 1200);
+    pos(e);
     for (const p of dots) { const dx = p.x - m.x, dy = p.y - m.y, dist = Math.hypot(dx, dy) || 1; if (dist < 260) { const f = (1 - dist / 260) * 34; p.vx += (dx / dist) * f + rand(-3, 3); p.vy += (dy / dist) * f + rand(-3, 3); } }
   });
   document.fonts.ready.then(() => { build(); new IntersectionObserver(([en]) => { const was = running; running = en.isIntersecting; if (running && !was) tick(); }).observe(cv); });
@@ -695,7 +696,7 @@ const PROJECTS = [
 })();
 
 /* ================= CONTACT ================= */
-gsap.from('.contact__big', { y: 80, opacity: 0, duration: 1.2, ease: 'expo.out', scrollTrigger: { trigger: '.contact', start: 'top 75%', onEnter: () => Sound.chime() } });
+gsap.from('.contact__big', { y: 80, opacity: 0, duration: 1.2, ease: 'expo.out', scrollTrigger: { trigger: '.contact', start: 'top 75%' } });
 gsap.from('.cbtn', { y: 30, opacity: 0, duration: 0.9, stagger: 0.08, ease: 'power3.out', scrollTrigger: { trigger: '.contact__btns', start: 'top 92%' } });
 if (!touch) $$('.magnet').forEach(b => {
   b.addEventListener('pointermove', e => { const r = b.getBoundingClientRect(); gsap.to(b, { x: (e.clientX - r.left - r.width / 2) * 0.3, y: (e.clientY - r.top - r.height / 2) * 0.4, duration: 0.4 }); });
@@ -716,7 +717,7 @@ if (!touch) $$('.magnet').forEach(b => {
   };
   ScrollTrigger.addEventListener('refresh', measure);
   addEventListener('resize', measure);
-  btn.addEventListener('click', () => { Sound.swoosh(1, 0.08); lenis.scrollTo(0, { duration: 2 }); });
+  btn.addEventListener('click', () => lenis.scrollTo(0, { duration: 2 }));
   let lastActive = -2;
   const update = () => {
     const y = scrollY, max = document.documentElement.scrollHeight - innerHeight, p = max > 0 ? y / max : 0;
@@ -746,5 +747,6 @@ const fmt = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '
 const tickClock = () => { $('#clock').textContent = fmt.format(new Date()); };
 tickClock(); setInterval(tickClock, 15000);
 
-document.fonts.ready.then(() => ScrollTrigger.refresh());
+ScrollTrigger.sort();
+document.fonts.ready.then(() => { ScrollTrigger.sort(); ScrollTrigger.refresh(); });
 runLoader();
