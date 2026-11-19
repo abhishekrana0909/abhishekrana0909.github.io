@@ -12,7 +12,10 @@ gsap.registerPlugin(ScrollTrigger);
 /* ================= SOUND (WebAudio, no files) =================
    Only two places make sound: the intro name typing and the 8 website slides. */
 const Sound = (() => {
-  let ctx, out, master, noise, on = true;
+  let ctx, out, master, noise, on = true, keys = null, lastKey = -1;
+  // typing takes from earshot: key/medium + glitch/mid layer (-18 dB), last take = key + glitch/hit; KEY_SLOT s each
+  const KEY_SLOT = 0.35, KEY_N = 8;
+  const keyData = fetch('audio/type-glitch.wav?v=1').then(r => r.ok ? r.arrayBuffer() : null).catch(() => null);
   const init = () => {
     if (ctx) return;
     ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
@@ -21,6 +24,12 @@ const Sound = (() => {
     out = comp; comp.connect(master).connect(ctx.destination);
     noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    keyData.then(b => b && new Promise((res, rej) => ctx.decodeAudioData(b, res, rej))).then(buf => { if (buf) keys = buf; }).catch(() => {});
+  };
+  const playKey = (i, v = 0.55) => {
+    const s = ctx.createBufferSource(), g = ctx.createGain();
+    s.buffer = keys; s.playbackRate.value = 0.97 + Math.random() * 0.06; g.gain.value = v;
+    s.connect(g).connect(out); s.start(ctx.currentTime + 0.002, i * KEY_SLOT, KEY_SLOT);
   };
   const ok = () => on && ctx && ctx.state === 'running';
   const osc = (type, f, t, d, v, f2) => {
@@ -47,6 +56,11 @@ const Sound = (() => {
     // robotic, computer-terminal key
     type(final = false) {
       if (!ok()) return;
+      if (keys) {
+        if (final) { playKey(KEY_N - 1, 0.6); return; }
+        let i; do { i = (Math.random() * (KEY_N - 1)) | 0; } while (i === lastKey); lastKey = i;
+        playKey(i); return;
+      }
       const t = ctx.currentTime + 0.002, f = [880, 988, 1175, 1319, 1480][(Math.random() * 5) | 0];
       osc('square', f, t, 0.045, 0.045);
       osc('sine', f * 2.01, t, 0.03, 0.02);
