@@ -6,66 +6,86 @@ const touch = matchMedia('(hover:none),(pointer:coarse)').matches;
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const small = () => innerWidth < 761;
 const rand = (a, b) => a + Math.random() * (b - a);
+const wait = s => new Promise(r => gsap.delayedCall(s, r));
 gsap.registerPlugin(ScrollTrigger);
 
 /* ================= SOUND (WebAudio, no files) ================= */
 const Sound = (() => {
-  let ctx, master, on = false, padOn = false;
+  let ctx, master, out, noise, on = false, padOn = false;
   const init = () => {
-    ctx = new (window.AudioContext || window.webkitAudioContext)();
-    master = ctx.createGain(); master.gain.value = 0; master.connect(ctx.destination);
+    if (ctx) return;
+    ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 4;
+    master = ctx.createGain(); master.gain.value = 0;
+    out = comp; comp.connect(master).connect(ctx.destination);
+    noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   };
-  const blip = (f = 1200, d = 0.05, v = 0.035, type = 'sine') => {
-    if (!on || !ctx) return;
-    const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain();
-    o.type = type; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 0.55, t + d);
-    g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-    o.connect(g).connect(master); o.start(t); o.stop(t + d + 0.03);
+  const ok = () => on && ctx;
+  const tone = (f = 880, d = 0.12, v = 0.05, type = 'sine', at = 0, drop = 0.6) => {
+    if (!ok()) return;
+    const t = ctx.currentTime + at, o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(Math.max(30, f * drop), t + d);
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(v, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(g).connect(out); o.start(t); o.stop(t + d + 0.05);
   };
-  const whoosh = (d = 0.7, v = 0.08) => {
-    if (!on || !ctx) return;
-    const t = ctx.currentTime, len = Math.floor(ctx.sampleRate * d);
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate), ch = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / len);
-    const src = ctx.createBufferSource(); src.buffer = buf;
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.2;
-    bp.frequency.setValueAtTime(300, t); bp.frequency.exponentialRampToValueAtTime(3000, t + d);
-    const g = ctx.createGain(); g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-    src.connect(bp).connect(g).connect(master); src.start(t);
+  const burst = (freq, d, v, type = 'bandpass', q = 1, at = 0, sweepTo = 0) => {
+    if (!ok()) return;
+    const t = ctx.currentTime + at, src = ctx.createBufferSource(); src.buffer = noise;
+    const f = ctx.createBiquadFilter(); f.type = type; f.Q.value = q; f.frequency.setValueAtTime(freq, t);
+    if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t + d);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(v, t + Math.min(0.25, d * 0.35)); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    src.connect(f).connect(g).connect(out); src.start(t, Math.random() * 0.5, d + 0.05);
   };
-  const pad = () => {
-    if (padOn) return; padOn = true;
+  const S = {
+    get on() { return on; },
+    enable(v) {
+      init(); ctx.resume(); on = v;
+      master.gain.cancelScheduledValues(ctx.currentTime);
+      master.gain.linearRampToValueAtTime(v ? 1 : 0, ctx.currentTime + 0.3);
+      if (v && !padOn) pad();
+      return on;
+    },
+    blip: (f = 1500, d = 0.035, v = 0.02) => tone(f, d, v),
+    click: () => { tone(620, 0.08, 0.04, 'triangle'); },
+    whoosh: (d = 0.8, v = 0.09, from = 300, to = 3200) => burst(from, d, v, 'bandpass', 1.1, 0, to),
+    swoosh: (d = 1.1, v = 0.1) => burst(2800, d, v, 'bandpass', 0.9, 0, 220),
+    hello: () => { [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, 1.6, 0.03, 'sine', i * 0.09, 1)); },
+    lang: i => { const scale = [587.33, 659.25, 739.99, 880, 987.77, 1108.7, 1318.5]; tone(scale[i % 7], 0.5, 0.035, 'sine', 0, 1); tone(scale[i % 7] * 2, 0.25, 0.01, 'sine', 0, 1); },
+    chime: () => { [392, 587.33, 783.99, 1174.66].forEach((f, i) => tone(f, 2.2, 0.045, 'sine', i * 0.06, 1)); burst(6000, 1.2, 0.02, 'highpass', 0.7); },
+    assemble: (d = 3.2) => {
+      if (!ok()) return;
+      burst(200, d, 0.07, 'bandpass', 0.8, 0, 5200);
+      for (let i = 0; i < 70; i++) { const at = Math.pow(Math.random(), 0.7) * d; tone(rand(1800, 5200) * (0.6 + at / d), 0.05, rand(0.006, 0.016), 'sine', at, 0.8); }
+      [261.63, 392, 523.25].forEach((f, i) => tone(f, 2.6, 0.035, 'sine', d * 0.78 + i * 0.05, 1));
+    },
+    thock: (wide = false) => {
+      if (!ok()) return;
+      const p = rand(0.92, 1.08);
+      burst(4200 * p, 0.006, 0.05, 'highpass', 0.7);
+      burst((wide ? 480 : 650) * p, wide ? 0.07 : 0.05, 0.32, 'bandpass', 1.3, 0.002);
+      tone((wide ? 180 : 240) * p, wide ? 0.08 : 0.06, 0.4, 'sine', 0.001, 0.44);
+    },
+    tick: () => { tone(2400, 0.02, 0.02, 'square', 0, 0.9); },
+  };
+  function pad() {
+    padOn = true;
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420;
-    const g = ctx.createGain(); g.gain.value = 0.022; lp.connect(g).connect(master);
-    [55, 82.41, 110.3].forEach((f, i) => {
-      const o = ctx.createOscillator(); o.type = i ? 'triangle' : 'sine'; o.frequency.value = f; o.detune.value = rand(-6, 6);
-      o.connect(lp); o.start();
-    });
-    const lfo = ctx.createOscillator(), lg = ctx.createGain(); lfo.frequency.value = 0.07; lg.gain.value = 180;
-    lfo.connect(lg).connect(lp.frequency); lfo.start();
-  };
-  const toggle = () => {
-    if (!ctx) init();
-    ctx.resume(); on = !on;
-    master.gain.cancelScheduledValues(ctx.currentTime);
-    master.gain.linearRampToValueAtTime(on ? 1 : 0, ctx.currentTime + 0.4);
-    if (on) { pad(); setTimeout(() => blip(880, 0.12, 0.05), 50); }
-    return on;
-  };
-  return { blip, whoosh, toggle, get on() { return on; } };
+    const g = ctx.createGain(); g.gain.value = 0.02; lp.connect(g).connect(out);
+    [55, 82.41, 110.3].forEach((f, i) => { const o = ctx.createOscillator(); o.type = i ? 'triangle' : 'sine'; o.frequency.value = f; o.detune.value = rand(-6, 6); o.connect(lp); o.start(); });
+    const lfo = ctx.createOscillator(), lg = ctx.createGain(); lfo.frequency.value = 0.07; lg.gain.value = 180; lfo.connect(lg).connect(lp.frequency); lfo.start();
+  }
+  return S;
 })();
 
 const soundBtn = $('#soundBtn');
-soundBtn.addEventListener('click', () => {
-  const on = Sound.toggle();
-  soundBtn.classList.toggle('on', on); soundBtn.setAttribute('aria-pressed', on);
-  $('#soundLabel').textContent = on ? 'Sound on' : 'Sound off';
-});
+const setSoundUI = on => { soundBtn.classList.toggle('on', on); soundBtn.setAttribute('aria-pressed', on); $('#soundLabel').textContent = on ? 'Sound on' : 'Sound off'; };
+soundBtn.addEventListener('click', () => setSoundUI(Sound.enable(!Sound.on)));
 document.addEventListener('mouseover', e => {
   const t = e.target.closest('a,button,.srow,.wcard');
-  if (t && !t.contains(e.relatedTarget)) Sound.blip(1500, 0.035, 0.02);
+  if (t && !t.contains(e.relatedTarget)) Sound.blip();
 });
-document.addEventListener('pointerdown', () => Sound.blip(620, 0.09, 0.045, 'triangle'));
+document.addEventListener('pointerdown', e => { if (!e.target.closest('.key,.play__canvas,.gate')) Sound.click(); });
 
 /* ================= CURSOR ================= */
 const cursor = $('#cursor'), pill = $('#cursorPill');
@@ -94,7 +114,7 @@ gsap.ticker.lagSmoothing(0);
 lenis.stop();
 $$('a[href^="#"]').forEach(a => a.addEventListener('click', e => {
   const id = a.getAttribute('href'); const el = id === '#top' ? 0 : $(id);
-  if (el === null) return; e.preventDefault(); lenis.scrollTo(el, { duration: 1.6 });
+  if (el === null) return; e.preventDefault(); Sound.whoosh(0.7, 0.05); lenis.scrollTo(el, { duration: 1.6 });
 }));
 
 /* ================= HERO PARTICLES ================= */
@@ -110,45 +130,46 @@ const Hero = (() => {
   camera.position.z = 5;
   const uniforms = {
     uTime: { value: 0 }, uIntro: { value: reduce ? 1 : 0 }, uScatter: { value: 0 },
-    uMouse: { value: new THREE.Vector2(9, 9) }, uMouseStr: { value: 0 }, uSize: { value: 20 }, uPR: { value: pr },
+    uMouse: { value: new THREE.Vector2(9, 9) }, uMouseStr: { value: 0 }, uSize: { value: 10 }, uPR: { value: pr },
   };
   const vert = `
     uniform float uTime,uIntro,uScatter,uSize,uPR,uMouseStr; uniform vec2 uMouse;
     attribute vec3 aStart; attribute float aLum,aSeed;
-    varying float vLum,vHot,vA;
+    varying float vLum,vA,vHole;
     void main(){
-      float t = clamp(uIntro*1.8 - aSeed*0.8, 0., 1.);
-      t = 1. - pow(1. - t, 3.);
+      float t = clamp(uIntro*1.7 - aSeed*0.7, 0., 1.);
+      t = 1. - pow(1. - t, 4.);
       vec3 p = mix(aStart, position, t);
-      p.x += sin(uTime*1.3 + aSeed*40.)*0.0035;
-      p.y += cos(uTime*1.1 + aSeed*31.)*0.0035;
+      float settle = 1. - t;
+      p.x += sin(uTime*1.3 + aSeed*40.)*(0.0012 + settle*0.02);
+      p.y += cos(uTime*1.1 + aSeed*31.)*(0.0012 + settle*0.02);
       vec2 d = p.xy - uMouse; float dist = length(d);
-      float f = smoothstep(0.27, 0.0, dist) * uMouseStr * t;
-      p.xy += normalize(d + 1e-5) * f * 0.16;
-      p.z += f * (0.25 + aSeed*0.6);
+      float f = smoothstep(0.24, 0.0, dist) * uMouseStr * t;
+      p.xy += normalize(d + 1e-5) * f * 0.14;
+      p.z += f * (0.1 + aSeed*0.3);
       p += (aStart - position) * uScatter * (0.35 + aSeed);
       vec4 mv = modelViewMatrix * vec4(p, 1.);
       gl_Position = projectionMatrix * mv;
-      gl_PointSize = uSize * (0.75 + aLum*0.7) * uPR / -mv.z * (1. + f*0.9);
-      vLum = aLum; vHot = f; vA = t * (1. - uScatter*0.85);
+      float sz = uSize * (0.8 + aLum*0.4) * uPR / max(-mv.z, 2.5);
+      gl_PointSize = min(sz, 6. * uPR);
+      vLum = aLum; vA = t * (1. - uScatter*0.85); vHole = f;
     }`;
   const frag = `
-    varying float vLum,vHot,vA;
+    varying float vLum,vA,vHole;
     void main(){
       vec2 c = gl_PointCoord - .5; float r = length(c); if (r > .5) discard;
-      float a = smoothstep(.5, .05, r);
-      vec3 col = mix(vec3(pow(vLum, .75)), vec3(1., .5, .12), vHot*.9);
-      gl_FragColor = vec4(col, a * (0.32 + vLum*0.95) * (0.25 + 0.75*vA));
+      float a = smoothstep(.5, .2, r);
+      vec3 col = vec3(pow(vLum, .85));
+      gl_FragColor = vec4(col, a * (0.3 + vLum*0.7) * (0.15 + 0.85*vA) * (1. - vHole*0.75));
     }`;
-  const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: vert, fragmentShader: frag, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+  const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: vert, fragmentShader: frag, transparent: true, depthWrite: false, depthTest: false, blending: THREE.NormalBlending });
   const group = new THREE.Group(); scene.add(group);
   let points, rows = 1, aspectImg = 0.73;
 
-  // floating dust
-  const dustN = small() ? 260 : 600, dp = new Float32Array(dustN * 3);
-  for (let i = 0; i < dustN; i++) { dp[i * 3] = rand(-4, 4); dp[i * 3 + 1] = rand(-2.5, 2.5); dp[i * 3 + 2] = rand(-3, 1.5); }
+  const dustN = small() ? 220 : 500, dp = new Float32Array(dustN * 3);
+  for (let i = 0; i < dustN; i++) { dp[i * 3] = rand(-4, 4); dp[i * 3 + 1] = rand(-2.5, 2.5); dp[i * 3 + 2] = rand(-3, 1); }
   const dustG = new THREE.BufferGeometry(); dustG.setAttribute('position', new THREE.BufferAttribute(dp, 3));
-  const dust = new THREE.Points(dustG, new THREE.PointsMaterial({ color: 0xffb070, size: 0.012, transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending }));
+  const dust = new THREE.Points(dustG, new THREE.PointsMaterial({ color: 0xffffff, size: 0.01, transparent: true, opacity: 0.3, depthWrite: false }));
   scene.add(dust);
 
   const ready = new Promise(res => {
@@ -162,14 +183,12 @@ const Hero = (() => {
       const pos = [], start = [], lum = [], seed = [];
       for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) {
         const i = (y * W + x) * 4, a = data[i + 3];
-        if (a < 110) continue;
+        if (a < 120) continue;
         const l = (data[i] * 0.3 + data[i + 1] * 0.59 + data[i + 2] * 0.11) / 255;
-        const px = (x / W - 0.5) * aspectImg * 2 + rand(-0.5, 0.5) * step / H;
-        const py = (0.5 - y / H) * 2 + rand(-0.5, 0.5) * step / H;
-        pos.push(px, py, rand(-0.02, 0.02));
-        const th = rand(0, Math.PI * 2), ph = Math.acos(rand(-1, 1)), rr = rand(2.2, 6);
-        start.push(Math.sin(ph) * Math.cos(th) * rr, Math.sin(ph) * Math.sin(th) * rr * 0.7, Math.cos(ph) * rr - 1);
-        lum.push(Math.min(1, l * 1.08)); seed.push(Math.random());
+        pos.push((x / W - 0.5) * aspectImg * 2, (0.5 - y / H) * 2, 0);
+        const th = rand(0, Math.PI * 2), rr = rand(1.6, 4.5);
+        start.push(Math.cos(th) * rr * 1.3, Math.sin(th) * rr * 0.8, rand(-3, 0.6));
+        lum.push(Math.min(1, 0.04 + l * 1.05)); seed.push(Math.random());
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -188,19 +207,17 @@ const Hero = (() => {
     renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
     visH = 2 * camera.position.z * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)); visW = visH * camera.aspect;
     const photoH = Math.min(visH * 0.9, (visW * 0.96) / aspectImg);
-    const s = photoH / 2; group.scale.setScalar(s);
+    group.scale.setScalar(photoH / 2);
     group.position.set(0, -visH / 2 + photoH / 2, 0);
-    uniforms.uSize.value = (photoH / visH * h / rows) * camera.position.z * 1.25;
+    uniforms.uSize.value = (photoH / visH * h / rows) * camera.position.z * 1.15;
   }
   addEventListener('resize', resize);
 
-  // mouse -> local coords
   const target = new THREE.Vector2(9, 9), cur = new THREE.Vector2(9, 9);
   let strT = 0;
   const setFromClient = (cx, cy) => {
     const r = section.getBoundingClientRect();
-    const nx = (cx - r.left) / r.width - 0.5, ny = 0.5 - (cy - r.top) / r.height;
-    const wx = nx * visW, wy = ny * visH;
+    const wx = ((cx - r.left) / r.width - 0.5) * visW, wy = (0.5 - (cy - r.top) / r.height) * visH;
     target.set((wx - group.position.x) / group.scale.x, (wy - group.position.y) / group.scale.y);
   };
   section.addEventListener('pointermove', e => { setFromClient(e.clientX, e.clientY); strT = 1; });
@@ -218,26 +235,27 @@ const Hero = (() => {
     cur.lerp(target, 0.12); uniforms.uMouse.value.copy(cur);
     uniforms.uMouseStr.value += (strT - uniforms.uMouseStr.value) * 0.06;
     dust.rotation.y = t * 0.02; dust.position.y = Math.sin(t * 0.2) * 0.05;
-    group.rotation.y = (mouse.x / innerWidth - 0.5) * 0.12; group.rotation.x = (mouse.y / innerHeight - 0.5) * -0.05;
+    group.rotation.y = (mouse.x / innerWidth - 0.5) * 0.1; group.rotation.x = (mouse.y / innerHeight - 0.5) * -0.04;
     renderer.render(scene, camera);
   });
 
   gsap.to(uniforms.uScatter, { value: 1, ease: 'none', scrollTrigger: { trigger: section, start: 'top top', end: 'bottom top', scrub: true } });
   return {
     ready,
-    intro() { gsap.fromTo(uniforms.uIntro, { value: reduce ? 1 : 0 }, { value: 1, duration: reduce ? 0.01 : 3.4, ease: 'none' }); },
+    intro(d = 3.4) { Sound.assemble(d * 0.9); gsap.fromTo(uniforms.uIntro, { value: reduce ? 1 : 0 }, { value: 1, duration: reduce ? 0.01 : d, ease: 'none' }); },
   };
 })();
 
 /* ================= TEXT HELPERS ================= */
 const GLYPHS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#%&*+/<>!?';
-function scramble(el, text, dur = 0.9) {
+function scramble(el, text, dur = 0.9, onLetter) {
   return new Promise(res => {
-    const len = text.length, o = { p: 0 };
+    const len = text.length, o = { p: 0 }; let last = -1;
     gsap.to(o, {
       p: 1, duration: dur, ease: 'power2.out',
       onUpdate() {
         const n = Math.floor(o.p * len); let s = '';
+        if (n !== last) { last = n; onLetter && onLetter(n); }
         for (let i = 0; i < len; i++) s += i < n || text[i] === ' ' ? text[i] : GLYPHS[(Math.random() * GLYPHS.length) | 0];
         el.textContent = s;
       },
@@ -270,57 +288,95 @@ function splitWords(root) {
 const heroH1 = $('#heroName');
 heroH1.classList.remove('chrome');
 const heroChars = splitChars($('span', heroH1), 'chrome');
-gsap.set(heroChars, { yPercent: 105, opacity: 0 });
+gsap.set(heroH1, { opacity: 0 });
 gsap.set(['.hero__sub', '.hero__top', '.hero__hint', '.fcursor'], { opacity: 0 });
-heroH1.style.overflow = 'hidden';
 
-function heroIn() {
-  Hero.intro();
-  gsap.to(heroChars, { yPercent: 0, opacity: 1, duration: 1.3, ease: 'expo.out', stagger: 0.05, delay: 0.5 });
-  gsap.to(['.hero__sub', '.hero__top', '.hero__hint'], { opacity: 1, duration: 1, delay: 1.2, stagger: 0.12 });
-  gsap.to('.fcursor', { opacity: 1, duration: 0.6, delay: 2.2, stagger: 0.3 });
+function heroUI() {
+  gsap.to(['.hero__sub', '.hero__top', '.hero__hint'], { opacity: 1, duration: 1, delay: 0.6, stagger: 0.12 });
+  gsap.to('.fcursor', { opacity: 1, duration: 0.6, delay: 2.4, stagger: 0.3 });
   document.body.classList.remove('is-loading');
   lenis.start(); ScrollTrigger.refresh();
 }
 
+const LANGS = [
+  ['नमस्ते', 'hi'], ['ਸਤ ਸ੍ਰੀ ਅਕਾਲ', 'pa'], ['Hola', ''], ['Bonjour', ''], ['Ciao', ''], ['こんにちは', 'ja'], ['مرحبا', 'ar'],
+];
+
 async function runLoader() {
   const loader = $('#loader'), word = $('#loaderWord'), glow = $('.loader__glow'), count = $('#loaderCount');
-  if (reduce) { loader.remove(); await Hero.ready; heroIn(); return; }
-  let skip = false; loader.addEventListener('click', () => { skip = true; gsap.globalTimeline.timeScale(4); });
-  const c = { v: 0 };
-  gsap.to(c, { v: 100, duration: 6.2, ease: 'power1.inOut', onUpdate: () => { count.textContent = String(Math.round(c.v)).padStart(3, '0'); } });
-  const wait = s => new Promise(r => gsap.delayedCall(s, r));
+  const gate = $('#gate'), hello = $('#hello'), helloText = $('text', hello);
+  if (reduce) { loader.remove(); gsap.set(heroH1, { opacity: 1 }); await Hero.ready; Hero.intro(); heroUI(); return; }
 
-  await gsap.fromTo(glow, { scale: 0 }, { scale: 1, duration: 0.7, ease: 'back.out(3)' });
-  gsap.to(glow, { scale: 1.6, duration: 0.6, yoyo: true, repeat: 1, ease: 'sine.inOut' });
-  await wait(0.5);
-  // 1. Devanagari
-  word.className = 'loader__word deva'; word.textContent = 'नमस्ते';
-  gsap.to(glow, { scale: 0.4, opacity: 0.5, duration: 0.6 });
-  await gsap.fromTo(word, { opacity: 0, filter: 'blur(18px)', scale: 1.15 }, { opacity: 1, filter: 'blur(0px)', scale: 1, duration: 0.8, ease: 'power3.out' });
-  await wait(0.45);
-  await gsap.to(word, { opacity: 0, filter: 'blur(12px)', duration: 0.35 });
-  // 2. Namaste scramble
-  word.className = 'loader__word'; gsap.set(word, { opacity: 1, filter: 'blur(0px)' });
-  await scramble(word, 'Namaste', 0.8);
+  // gate: choose sound
+  gsap.fromTo(glow, { scale: 0 }, { scale: 1, duration: 0.8, ease: 'back.out(3)' });
+  gsap.to(glow, { scale: 1.35, duration: 1.2, yoyo: true, repeat: -1, ease: 'sine.inOut' });
+  gsap.from(gate, { opacity: 0, y: 14, duration: 0.8, delay: 0.4 });
+  await new Promise(res => {
+    const go = withSound => { setSoundUI(Sound.enable(withSound)); res(); };
+    $('#enterSound').addEventListener('click', () => go(true), { once: true });
+    $('#enterMute').addEventListener('click', () => go(false), { once: true });
+    const kd = e => { if (e.key === 'Enter') { removeEventListener('keydown', kd); go(true); } }; addEventListener('keydown', kd);
+  });
+  Sound.whoosh(0.5, 0.05);
+  await gsap.to(gate, { opacity: 0, y: -10, duration: 0.35 }); gate.remove();
+  gsap.killTweensOf(glow);
+  const c = { v: 0 };
+  gsap.to(c, { v: 100, duration: 9.2, ease: 'power1.inOut', onUpdate: () => { count.textContent = String(Math.round(c.v)).padStart(3, '0'); } });
+
+  // 1. "hello" written in cursive (Apple style)
+  gsap.to(glow, { scale: 0.3, opacity: 0, duration: 0.6 });
+  await document.fonts.load('230px Sacramento').catch(() => {});
+  const len = 2600;
+  gsap.set(hello, { opacity: 1 });
+  gsap.set(helloText, { strokeDasharray: len, strokeDashoffset: len, fillOpacity: 0 });
+  Sound.hello();
+  await gsap.to(helloText, { strokeDashoffset: 0, duration: 1.9, ease: 'power1.inOut' });
+  await gsap.to(helloText, { fillOpacity: 1, duration: 0.4 });
   await wait(0.35);
-  // 3. ABHISHEK letters fly in
+  await gsap.to(hello, { opacity: 0, filter: 'blur(10px)', scale: 0.96, duration: 0.4 });
+  hello.remove();
+
+  // 2. hello in many languages
+  for (let i = 0; i < LANGS.length; i++) {
+    const [txt, cls] = LANGS[i];
+    word.className = 'loader__word lang' + (cls ? ' lang-' + cls : ''); word.textContent = txt;
+    Sound.lang(i);
+    await gsap.fromTo(word, { opacity: 0, filter: 'blur(14px)', y: 10 }, { opacity: 1, filter: 'blur(0px)', y: 0, duration: 0.28, ease: 'power2.out' });
+    await wait(0.22);
+    await gsap.to(word, { opacity: 0, filter: 'blur(10px)', duration: 0.18 });
+  }
+
+  // 3. ABHISHEK letters fly together
+  word.className = 'loader__word'; gsap.set(word, { opacity: 1, filter: 'blur(0px)', y: 0 });
   word.textContent = 'ABHISHEK';
   const chs = splitChars(word, 'chrome');
-  Sound.whoosh(0.8, 0.06);
+  Sound.whoosh(1, 0.09);
   await gsap.from(chs, {
     x: () => rand(-innerWidth * 0.4, innerWidth * 0.4), y: () => rand(-innerHeight * 0.35, innerHeight * 0.35),
     rotation: () => rand(-200, 200), scale: () => rand(0.2, 1.8), opacity: 0,
     duration: 1.1, ease: 'expo.out', stagger: { each: 0.05, from: 'random' },
   });
-  gsap.to(glow, { opacity: 0, duration: 0.4 });
-  await Promise.all([Hero.ready, wait(0.4)]);
-  gsap.globalTimeline.timeScale(1);
-  Sound.whoosh(0.9, 0.07);
-  gsap.to(word, { scale: 1.25, opacity: 0, filter: 'blur(10px)', duration: 0.9, ease: 'power3.in' });
-  await gsap.to(loader, { clipPath: 'inset(0 0 100% 0)', duration: 1.1, ease: 'expo.inOut', delay: 0.35 });
+  await wait(0.45);
+
+  // 4. ABHISHEK -> PORTFOLIO
+  word.textContent = 'ABHISHEK'; word.classList.add('chrome');
+  await scramble(word, 'PORTFOLIO', 0.9, () => Sound.tick());
+  word.classList.remove('chrome'); const pchs = splitChars(word, 'chrome');
+  Sound.chime();
+  await Promise.all([Hero.ready, wait(0.5)]);
+
+  // 5. PORTFOLIO glides into the hero, photo assembles
+  const from = word.getBoundingClientRect(), to = heroH1.getBoundingClientRect();
+  const sc = to.width / from.width;
+  const dx = to.left + to.width / 2 - (from.left + from.width / 2), dy = to.top + to.height / 2 - (from.top + from.height / 2);
+  Sound.swoosh(1.2, 0.08);
+  Hero.intro(3.4);
+  gsap.to(count.parentElement, { opacity: 0, duration: 0.4 });
+  gsap.to(loader, { backgroundColor: 'rgba(0,0,0,0)', duration: 1.4, ease: 'power2.inOut' });
+  await gsap.to(word, { x: dx, y: dy, scale: sc, duration: 1.4, ease: 'expo.inOut' });
+  gsap.set(heroH1, { opacity: 1 });
   loader.remove();
-  heroIn();
+  heroUI();
 }
 
 /* ================= FLOATING FIGMA CURSORS ================= */
@@ -332,7 +388,7 @@ function wander(el, zone) {
   };
   gsap.set(el, { x: zone[0] * hero.clientWidth, y: zone[2] * hero.clientHeight }); go();
 }
-wander($('#fcA'), [0.08, 0.3, 0.3, 0.6]); wander($('#fcB'), [0.66, 0.86, 0.25, 0.55]);
+wander($('#fcA'), [0.08, 0.3, 0.3, 0.55]); wander($('#fcB'), [0.66, 0.86, 0.25, 0.5]);
 
 /* ================= HERO SCROLL ================= */
 gsap.to('.hero__name', { yPercent: -40, opacity: 0, ease: 'none', scrollTrigger: { trigger: '#hero', start: 'top top', end: 'bottom top', scrub: true } });
@@ -345,35 +401,154 @@ $$('[data-count]').forEach(b => {
   ScrollTrigger.create({ trigger: b, start: 'top 90%', once: true, onEnter: () => gsap.to(o, { v: n, duration: 1.6, ease: 'power2.out', onUpdate: () => { b.textContent = Math.round(o.v); } }) });
 });
 
+/* ================= KEYBOARD (RANA / PAINTS) ================= */
+const Keyboard = (() => {
+  const kb = $('#kb');
+  const K = (label, o = {}) => ({ label, ...o });
+  const rows = [
+    [K('esc', { w: 1.5, word: 'l', fn: 1 }), ...'F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12'.split(' ').map(f => K(f, { fn: 1, small: 1 })), K('', { fn: 1 })],
+    [K('~`', { pair: 1 }), ...['!1', '@2', '#3', '$4', '%5', '^6', '&7', '*8', '(9', ')0', '_-', '+='].map(p => K(p, { pair: 1 })), K('delete', { w: 1.5, word: 'r' })],
+    [K('tab', { w: 1.5, word: 'l' }), ...'RANA'.split('').map(l => K(l, { hl: 1 })), ...'TYUIOP'.split('').map(l => K(l)), K('{[', { pair: 1 }), K('}]', { pair: 1 }), K('|\\', { pair: 1 })],
+    [K('caps lock', { w: 1.75, word: 'l' }), ...'PAINTS'.split('').map(l => K(l, { hl: 1 })), ...'JKL'.split('').map(l => K(l)), K(':;', { pair: 1 }), K('"\'', { pair: 1 }), K('return', { w: 1.75, word: 'r' })],
+    [K('shift', { w: 2.25, word: 'l' }), ...'ZXCVBNM'.split('').map(l => K(l)), K('<,', { pair: 1 }), K('>.', { pair: 1 }), K('?/', { pair: 1 }), K('shift', { w: 2.25, word: 'r' })],
+    [K('fn', { word: 'l' }), K('control', { word: 'l', sym: '⌃' }), K('option', { word: 'l', sym: '⌥' }), K('command', { w: 1.25, word: 'l', sym: '⌘' }), K('', { w: 5, space: 1 }), K('command', { w: 1.25, word: 'l', sym: '⌘' }), K('option', { word: 'l', sym: '⌥' }), K('◀'), K('▲▼', { pair: 1 }), K('▶')],
+  ];
+  const typeOrder = [];
+  rows.forEach((row, ri) => {
+    const r = document.createElement('div'); r.className = 'kb__row';
+    row.forEach((k, ki) => {
+      const el = document.createElement('div'); el.className = 'key' + (k.fn ? ' fn' : '') + (k.hl ? ' hl' : '');
+      if (k.w) el.style.setProperty('--w', k.w);
+      if (k.pair) el.innerHTML = `<span class="pair"><i>${k.label[0]}</i><i>${k.label.slice(1)}</i></span>`;
+      else if (k.word) el.innerHTML = (k.sym ? `<small class="t">${k.sym}</small>` : '') + `<small class="${k.word === 'r' ? 'r' : ''}">${k.label}</small>`;
+      else if (k.small) el.innerHTML = `<span style="font-size:calc(var(--u)*.17)">${k.label}</span>`;
+      else el.innerHTML = `<span>${k.label}</span>`;
+      el.dataset.label = k.label;
+      if (k.hl) typeOrder.push(el);
+      if (k.space) { el.dataset.space = 1; typeOrder.splice(4, 0, el); }
+      const wide = (k.w || 1) >= 1.5;
+      el.addEventListener('pointerdown', () => { el.classList.add('down'); Sound.thock(wide); });
+      const up = () => el.classList.remove('down');
+      el.addEventListener('pointerup', up); el.addEventListener('pointerleave', up);
+      r.appendChild(el);
+    });
+    kb.appendChild(r);
+  });
+  // RANA, space, PAINTS order: hl keys are RANA then PAINTS; space inserted at index 4
+  const spaceKey = $('[data-space]', kb);
+  const seq = [...typeOrder.filter(k => !k.dataset.space)];
+  seq.splice(4, 0, spaceKey);
+  // map real keyboard letters to keys
+  const byLetter = {};
+  $$('.key', kb).forEach(k => { const l = k.dataset.label; if (l && l.length === 1) (byLetter[l] = byLetter[l] || []).push(k); });
+  let inView = false, loopT;
+  addEventListener('keydown', e => {
+    if (!inView || e.repeat) return;
+    const ks = e.key === ' ' ? [spaceKey] : byLetter[e.key.toUpperCase()];
+    if (!ks) return; ks.forEach(k => k.classList.add('down')); Sound.thock(e.key === ' ');
+    setTimeout(() => ks.forEach(k => k.classList.remove('down')), 140);
+  });
+  const typeAll = async () => {
+    for (const k of seq) {
+      if (!inView) return;
+      k.classList.add('down'); Sound.thock(k === spaceKey);
+      await wait(0.09); k.classList.remove('down'); await wait(rand(0.08, 0.18));
+    }
+  };
+  const loop = async () => { await typeAll(); if (inView) loopT = gsap.delayedCall(2.8, loop); };
+  new IntersectionObserver(([en]) => {
+    const was = inView; inView = en.intersectionRatio > 0.5;
+    if (inView && !was) { loopT && loopT.kill(); gsap.delayedCall(0.4, loop); }
+  }, { threshold: [0, 0.5, 0.8] }).observe($('.jpanel--shop'));
+})();
+
+/* ================= CODE TYPING (full background) ================= */
+(() => {
+  const box = $('#codeIn');
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const LINES = [
+    '// abhishek.rana — mohali, punjab',
+    'import { gsap } from "gsap";',
+    'import { WhatsApp } from "./contact";',
+    '',
+    'const client = { name: "your business", goal: "more customers" };',
+    '',
+    'export async function buildWebsite(client) {',
+    '  const site = await design({ style: "premium", mobileFirst: true });',
+    '  site.speed = "under 2 seconds";',
+    '  site.seo = google.ready(client.name);',
+    '  site.motion = gsap.timeline({ ease: "expo.out" });',
+    '  site.contact = new WhatsApp("+91 98769 63879");',
+    '  return deploy(site, { host: "github.io" });',
+    '}',
+    '',
+    '// discipline from the road, trust from the shop',
+    'while (!client.happy) {',
+    '  iterate(site);',
+    '  listen(client.feedback);',
+    '}',
+    '',
+    'const live = await buildWebsite(client);',
+    'console.log("Live at", live.url); // ✓ shipped',
+    '',
+  ];
+  const hl = s => {
+    if (/^\s*\/\//.test(s)) return `<span class="c">${esc(s)}</span>`;
+    return esc(s)
+      .replace(/(&quot;|")(.*?)\1/g, '<span class="s">"$2"</span>')
+      .replace(/\b(import|from|const|export|async|function|await|return|new|while)\b/g, '<span class="k">$1</span>')
+      .replace(/\b(\d+)\b(?![^<]*>)/g, '<span class="n">$1</span>');
+  };
+  let lineNo = 1, li = 0, running = false, cur = null, ci = 0, timer;
+  const caret = '<span class="caret"></span>';
+  const newLine = () => {
+    cur = document.createElement('div'); box.appendChild(cur); ci = 0;
+    while (box.children.length > 40) box.firstChild.remove();
+  };
+  const step = () => {
+    if (!running) return;
+    const text = LINES[li % LINES.length];
+    if (!cur) newLine();
+    if (ci <= text.length) {
+      cur.innerHTML = `<span class="ln">${lineNo}</span>${hl(text.slice(0, ci))}${caret}`;
+      ci += text.length ? Math.ceil(rand(1, 3)) : 1;
+      if (ci % 3 === 0) Sound.tick();
+      timer = setTimeout(step, rand(18, 55));
+    } else {
+      cur.innerHTML = `<span class="ln">${lineNo}</span>${hl(text)}`;
+      lineNo++; li++; newLine(); timer = setTimeout(step, rand(80, 260));
+    }
+  };
+  // pre-fill so the screen is never empty
+  for (let i = 0; i < 18; i++) { const d = document.createElement('div'); d.innerHTML = `<span class="ln">${lineNo}</span>${hl(LINES[li % LINES.length])}`; box.appendChild(d); lineNo++; li++; }
+  new IntersectionObserver(([en]) => {
+    const was = running; running = en.isIntersecting;
+    if (running && !was) step(); if (!running) clearTimeout(timer);
+  }).observe($('.jpanel--code'));
+})();
+
 /* ================= JOURNEY ================= */
 (() => {
-  const sw = $('#swatches');
-  const shades = ['#e9dcc5', '#c98b5e', '#7d8f6a', '#3f5a6b', '#d7b47a', '#a44a3f', '#efe7da', '#8d6e63', '#5b7f95', '#b9a48a', '#d9c3a5', '#6c7a4f', '#c4553b', '#f2d7b6', '#2f4858', '#a3b18a', '#e0b1a0', '#866a4f', '#cfd6d9', '#9b5d3a'];
-  let h = ''; for (let i = 0; i < 90; i++) h += `<i style="background:${shades[(i * 7 + (i >> 2)) % shades.length]}"></i>`;
-  sw.innerHTML = h;
-  const code = [
-    'const site = build({ client: "your business" });', '<b>// fast on every phone</b>', 'site.speed = "under 2s";',
-    'site.seo = google.ready();', 'whatsapp.connect("+91 98769 63879");', '<b>// motion that means something</b>',
-    'gsap.to(".hero", { y: 0, ease: "expo.out" });', 'export default function Shop() {', '  return <Catalogue items={shades} />;', '}',
-    'deploy("github.io") // live in minutes', '<b>// discipline from the road</b>', 'while (!done) { work(); }',
-  ];
-  const pre = $('#codefall'); let body = '';
-  for (let i = 0; i < 60; i++) body += '  '.repeat(i % 3) + code[i % code.length] + '\n';
-  pre.innerHTML = `<div class="codefall__in">${body}${body}</div>`;
-  gsap.to('.codefall__in', { yPercent: -50, duration: 50, ease: 'none', repeat: -1 });
-
   const mm = gsap.matchMedia();
   mm.add('(min-width: 761px)', () => {
     const track = $('#journeyTrack');
     const dist = () => track.scrollWidth - innerWidth;
+    let lastPanel = -1;
     const tween = gsap.to(track, {
       x: () => -dist(), ease: 'none',
-      scrollTrigger: { trigger: '#journey', pin: true, scrub: 1, end: () => '+=' + dist(), invalidateOnRefresh: true,
-        onUpdate: s => gsap.set('#journeyLine', { scaleX: s.progress }) },
+      scrollTrigger: {
+        trigger: '#journey', pin: true, scrub: 1, end: () => '+=' + dist(), invalidateOnRefresh: true,
+        onUpdate: s => {
+          gsap.set('#journeyLine', { scaleX: s.progress });
+          const p = Math.round(s.progress * 3); if (p !== lastPanel) { lastPanel = p; Sound.whoosh(0.6, 0.04, 400, 1800); }
+        },
+      },
     });
     $$('.jpanel__place').forEach(p => {
       gsap.fromTo(p, { xPercent: -30 }, { xPercent: -70, ease: 'none', scrollTrigger: { trigger: p.parentElement, containerAnimation: tween, start: 'left right', end: 'right left', scrub: true } });
     });
+    gsap.fromTo('.jbg img', { xPercent: 6 }, { xPercent: -6, ease: 'none', scrollTrigger: { trigger: '.jpanel--road', containerAnimation: tween, start: 'left right', end: 'right left', scrub: true } });
+    gsap.fromTo('.kb', { rotateX: 55, rotateZ: -10, y: 60 }, { rotateX: 32, rotateZ: -4, y: -30, ease: 'none', scrollTrigger: { trigger: '.jpanel--shop', containerAnimation: tween, start: 'left right', end: 'center center', scrub: true } });
     $$('.jpanel__body').forEach(b => {
       gsap.from(b, { y: 60, opacity: 0, duration: 1, ease: 'power3.out', scrollTrigger: { trigger: b.parentElement, containerAnimation: tween, start: 'left 45%' } });
     });
@@ -414,16 +589,19 @@ const PROJECTS = [
   const layout = () => {
     cw = small() ? Math.min(innerWidth * 0.86, 520) : Math.min(innerWidth * 0.44, 780);
     GAP = small() ? 1000 : 1300;
-    world.style.setProperty('--cw', cw + 'px');
     cards.forEach(c => c.el.style.setProperty('--cw', cw + 'px'));
+    cards.forEach(c => { if (c.frame) c.frame.style.transform = `scale(${cw / 1440})`; });
   };
   layout(); addEventListener('resize', () => { layout(); update(st ? st.progress : 0); });
 
   const title = $('#workTitle'), cat = $('#workCat'), idx = $('#workIdx');
   const setActive = i => {
     if (i === active) return; active = i;
-    scramble(title, PROJECTS[i].name, 0.6); cat.textContent = PROJECTS[i].cat; idx.textContent = String(i + 1).padStart(2, '0');
-    Sound.blip(980, 0.06, 0.03);
+    gsap.killTweensOf([title, cat]);
+    gsap.fromTo(title, { opacity: 0, y: 24, filter: 'blur(6px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 0.6, ease: 'power3.out', onStart: () => { title.textContent = PROJECTS[i].name; } });
+    gsap.fromTo(cat, { opacity: 0 }, { opacity: 1, duration: 0.6, delay: 0.1, onStart: () => { cat.textContent = PROJECTS[i].cat; } });
+    idx.textContent = String(i + 1).padStart(2, '0');
+    Sound.whoosh(0.45, 0.035, 600, 2400);
     if (small()) return;
     cards.forEach((c, j) => {
       clearTimeout(c.timer);
@@ -509,7 +687,7 @@ const PROJECTS = [
   cv.addEventListener('pointermove', pos);
   cv.addEventListener('pointerleave', () => { m.x = m.y = -999; });
   cv.addEventListener('pointerdown', e => {
-    pos(e); Sound.whoosh(0.5, 0.06);
+    pos(e); Sound.whoosh(0.5, 0.08, 200, 1200);
     for (const p of dots) { const dx = p.x - m.x, dy = p.y - m.y, dist = Math.hypot(dx, dy) || 1; if (dist < 260) { const f = (1 - dist / 260) * 34; p.vx += (dx / dist) * f + rand(-3, 3); p.vy += (dy / dist) * f + rand(-3, 3); } }
   });
   document.fonts.ready.then(() => { build(); new IntersectionObserver(([en]) => { const was = running; running = en.isIntersecting; if (running && !was) tick(); }).observe(cv); });
@@ -517,12 +695,51 @@ const PROJECTS = [
 })();
 
 /* ================= CONTACT ================= */
-gsap.from('.contact__big', { y: 80, opacity: 0, duration: 1.2, ease: 'expo.out', scrollTrigger: { trigger: '.contact', start: 'top 75%' } });
+gsap.from('.contact__big', { y: 80, opacity: 0, duration: 1.2, ease: 'expo.out', scrollTrigger: { trigger: '.contact', start: 'top 75%', onEnter: () => Sound.chime() } });
 gsap.from('.cbtn', { y: 30, opacity: 0, duration: 0.9, stagger: 0.08, ease: 'power3.out', scrollTrigger: { trigger: '.contact__btns', start: 'top 92%' } });
 if (!touch) $$('.magnet').forEach(b => {
   b.addEventListener('pointermove', e => { const r = b.getBoundingClientRect(); gsap.to(b, { x: (e.clientX - r.left - r.width / 2) * 0.3, y: (e.clientY - r.top - r.height / 2) * 0.4, duration: 0.4 }); });
   b.addEventListener('pointerleave', () => gsap.to(b, { x: 0, y: 0, duration: 0.8, ease: 'elastic.out(1,0.4)' }));
 });
+
+/* ================= SCROLL PROGRESS: back-to-top ring + nav line ================= */
+(() => {
+  const btn = $('#toTop'), ring = $('#toTopRing'), C = 2 * Math.PI * 27;
+  const nav = $('#nav'), fill = $('#navFill'), dot = $('#navDot'), track = $('.nav__track');
+  const links = $$('.nav__links a');
+  const ids = links.map(a => a.getAttribute('href'));
+  let starts = [], centers = [];
+  const measure = () => {
+    starts = ids.map(id => { const el = $(id); const sp = el.closest('.pin-spacer') || el; return sp.getBoundingClientRect().top + scrollY; });
+    const tr = track.getBoundingClientRect();
+    centers = links.map(a => { const r = a.getBoundingClientRect(); return (r.left + r.width / 2 - tr.left) / tr.width; });
+  };
+  ScrollTrigger.addEventListener('refresh', measure);
+  addEventListener('resize', measure);
+  btn.addEventListener('click', () => { Sound.swoosh(1, 0.08); lenis.scrollTo(0, { duration: 2 }); });
+  let lastActive = -2;
+  const update = () => {
+    const y = scrollY, max = document.documentElement.scrollHeight - innerHeight, p = max > 0 ? y / max : 0;
+    ring.style.strokeDashoffset = C * (1 - p);
+    btn.classList.toggle('show', y > innerHeight * 0.8);
+    nav.classList.toggle('solid', y > 40);
+    if (!starts.length) measure();
+    const off = innerHeight * 0.4;
+    let f;
+    if (y + off < starts[0]) f = centers[0] * Math.max(0, (y + off) / starts[0]);
+    else {
+      let i = starts.length - 1; while (i > 0 && y + off < starts[i]) i--;
+      if (i < starts.length - 1) f = centers[i] + (centers[i + 1] - centers[i]) * ((y + off - starts[i]) / (starts[i + 1] - starts[i]));
+      else f = centers[i] + (1 - centers[i]) * Math.min(1, (y + off - starts[i]) / Math.max(1, max + off - starts[i]));
+    }
+    f = Math.max(0, Math.min(1, f));
+    fill.style.transform = `scaleX(${f})`; dot.style.left = (f * 100) + '%';
+    let a = -1; starts.forEach((s, i) => { if (y + off >= s) a = i; });
+    if (a !== lastActive) { lastActive = a; links.forEach((l, i) => l.classList.toggle('active', i === a)); }
+  };
+  lenis.on('scroll', update); addEventListener('scroll', update, { passive: true });
+  ScrollTrigger.addEventListener('refresh', update);
+})();
 
 /* ================= CLOCK ================= */
 const fmt = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });

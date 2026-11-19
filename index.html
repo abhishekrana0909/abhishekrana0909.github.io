@@ -13,8 +13,9 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Tiro+Devanagari+Hindi&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=2">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&family=Instrument+Serif:ital@0;1&family=Tiro+Devanagari+Hindi&family=Sacramento&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Gurmukhi:wght@400&family=Noto+Naskh+Arabic:wght@400&family=Noto+Serif+JP:wght@400&text=%E0%A8%B8%E0%A8%A4%20%E0%A8%B8%E0%A9%8D%E0%A8%B0%E0%A9%80%20%E0%A8%85%E0%A8%95%E0%A8%BE%E0%A8%B2%D9%85%D8%B1%D8%AD%D8%A8%D8%A7%E3%81%93%E3%82%93%E3%81%AB%E3%81%A1%E3%81%AF&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css?v=3">
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js"}}</script>
 </head>
 <body class="is-loading">
@@ -22,7 +23,12 @@
 <!-- LOADER -->
 <div class="loader" id="loader" aria-hidden="true">
   <div class="loader__glow"></div>
+  <svg class="hello" id="hello" viewBox="0 0 640 260" aria-hidden="true"><text x="320" y="170" text-anchor="middle">hello</text></svg>
   <div class="loader__word" id="loaderWord"></div>
+  <div class="gate" id="gate">
+    <button class="gate__btn" id="enterSound" type="button"><span class="gate__eq"><i></i><i></i><i></i></span>Enter with sound</button>
+    <button class="gate__mute" id="enterMute" type="button">or enter without sound</button>
+  </div>
   <div class="loader__foot"><span>Mohali, Punjab</span><span id="loaderCount">000</span></div>
 </div>
 
@@ -37,6 +43,7 @@
     <a href="#services">Services</a>
     <a href="#work">Work</a>
     <a href="#contact">Contact</a>
+    <span class="nav__track" aria-hidden="true"><i id="navFill"></i><b id="navDot"></b></span>
   </nav>
   <button class="sound" id="soundBtn" aria-pressed="false" aria-label="Toggle sound" data-cursor="Sound">
     <span class="sound__bars"><i></i><i></i><i></i><i></i></span><span class="sound__label" id="soundLabel">Sound off</span>
@@ -54,9 +61,9 @@
     <p class="hero__loc">30.70° N, 76.71° E<br>Mohali, Punjab</p>
   </div>
   <div class="hero__name">
-    <h1 class="chrome" id="heroName"><span>ABHISHEK</span></h1>
+    <h1 class="chrome" id="heroName"><span>PORTFOLIO</span></h1>
     <div class="hero__sub">
-      <p class="hero__role"><em>Web Developer</em> · Mohali</p>
+      <p class="hero__role"><b>Abhishek Rana</b><span><em>Web Developer</em> · Mohali</span></p>
       <p class="hero__line">Websites that make a business look as serious as it is.</p>
     </div>
   </div>
@@ -88,7 +95,7 @@
     </div>
 
     <article class="jpanel jpanel--road">
-      <div class="road" aria-hidden="true"><div class="road__plane"></div></div>
+      <div class="jbg jbg--burj" aria-hidden="true"><img src="images/burj.webp" alt="" loading="lazy"></div>
       <div class="jpanel__meta"><span>Chapter 01</span><span>Dubai, UAE</span></div>
       <h3 class="jpanel__place outline">DUBAI</h3>
       <div class="jpanel__body">
@@ -98,7 +105,7 @@
     </article>
 
     <article class="jpanel jpanel--shop">
-      <div class="swatches" aria-hidden="true" id="swatches"></div>
+      <div class="kbwrap" aria-hidden="true"><div class="kb" id="kb"></div></div>
       <div class="jpanel__meta"><span>Chapter 02</span><span>Passi Kandi, Punjab</span></div>
       <h3 class="jpanel__place outline">PUNJAB</h3>
       <div class="jpanel__body">
@@ -108,7 +115,7 @@
     </article>
 
     <article class="jpanel jpanel--code">
-      <pre class="codefall" aria-hidden="true" id="codefall"></pre>
+      <div class="codefall" aria-hidden="true" id="codefall"><div class="codefall__in" id="codeIn"></div></div>
       <div class="jpanel__meta"><span>Chapter 03</span><span>Mohali, Punjab</span></div>
       <h3 class="jpanel__place outline">MOHALI</h3>
       <div class="jpanel__body">
@@ -151,7 +158,7 @@
   <div class="work__stage" id="workStage">
     <div class="work__head">
       <p class="label">( Selected work · <span id="workIdx">01</span> / 08 )</p>
-      <h2 class="work__title chrome" id="workTitle">Rana Paints</h2>
+      <h2 class="work__title" id="workTitle">Rana Paints</h2>
       <p class="work__cat" id="workCat">Paint &amp; hardware store</p>
     </div>
     <div class="work__world" id="workWorld"></div>
@@ -172,7 +179,7 @@
 <!-- CONTACT -->
 <section class="contact" id="contact">
   <p class="label">( Contact )</p>
-  <h2 class="contact__big">Let's build<br>something <em>dhaansu.</em></h2>
+  <h2 class="contact__big">Let's build<br>something <em>remarkable.</em></h2>
   <p class="contact__sub">Tell me about your business on WhatsApp. No agency, no middlemen: you talk to the person who builds it.</p>
   <div class="contact__btns">
     <a class="cbtn cbtn--main magnet" data-cursor="Chat" target="_blank" rel="noopener" href="https://wa.me/919876963879?text=Namaste%20Abhishek%2C%20mujhe%20website%20banwani%20hai.">WhatsApp me <span>↗</span></a>
@@ -184,6 +191,11 @@
 
 </main>
 
+<button class="totop" id="toTop" type="button" aria-label="Back to top" data-cursor="Top">
+  <svg viewBox="0 0 60 60" aria-hidden="true"><circle class="totop__track" cx="30" cy="30" r="27"/><circle class="totop__ring" id="toTopRing" cx="30" cy="30" r="27"/></svg>
+  <span>↑</span>
+</button>
+
 <footer class="foot">
   <span>© 2026 Abhishek Rana</span>
   <span>Mohali <b id="clock">--:--</b> IST</span>
@@ -193,6 +205,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
 <script src="https://unpkg.com/lenis@1.1.13/dist/lenis.min.js"></script>
-<script type="module" src="js/main.js?v=2"></script>
+<script type="module" src="js/main.js?v=3"></script>
 </body>
 </html>
