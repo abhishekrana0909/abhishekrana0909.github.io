@@ -13,9 +13,10 @@ gsap.registerPlugin(ScrollTrigger);
    Only two places make sound: the intro name typing and the 8 website slides. */
 const Sound = (() => {
   let ctx, out, master, noise, on = true, keys = null, lastKey = -1;
-  // typing takes from earshot: key/medium + glitch/mid layer (-18 dB), last take = key + glitch/hit; KEY_SLOT s each
-  const KEY_SLOT = 0.35, KEY_N = 8;
-  const keyData = fetch('audio/type-glitch.wav?v=1').then(r => r.ok ? r.arrayBuffer() : null).catch(() => null);
+  // sprite: 7 keystrokes sliced from Mixkit "Typing on an electronic device" (KEY_SLOT s each),
+  // then Mixkit "Sci Fi confirmation" at CONF_AT for CONF_LEN s (played once, after PORTFOLIO is typed)
+  const KEY_SLOT = 0.12, KEY_N = 7, CONF_AT = 0.84, CONF_LEN = 1.1;
+  const keyData = fetch('audio/type-hud.wav?v=1').then(r => r.ok ? r.arrayBuffer() : null).catch(() => null);
   const init = () => {
     if (ctx) return;
     ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
@@ -26,11 +27,12 @@ const Sound = (() => {
     const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     keyData.then(b => b && new Promise((res, rej) => ctx.decodeAudioData(b, res, rej))).then(buf => { if (buf) keys = buf; }).catch(() => {});
   };
-  const playKey = (i, v = 0.55) => {
+  const playPart = (at, len, v, rate = 1) => {
     const s = ctx.createBufferSource(), g = ctx.createGain();
-    s.buffer = keys; s.playbackRate.value = 0.97 + Math.random() * 0.06; g.gain.value = v;
-    s.connect(g).connect(out); s.start(ctx.currentTime + 0.002, i * KEY_SLOT, KEY_SLOT);
+    s.buffer = keys; s.playbackRate.value = rate; g.gain.value = v;
+    s.connect(g).connect(out); s.start(ctx.currentTime + 0.002, at, len);
   };
+  const playKey = i => playPart(i * KEY_SLOT, KEY_SLOT, 0.6, 0.97 + Math.random() * 0.06);
   const ok = () => on && ctx && ctx.state === 'running';
   const osc = (type, f, t, d, v, f2) => {
     const o = ctx.createOscillator(), g = ctx.createGain();
@@ -57,8 +59,7 @@ const Sound = (() => {
     type(final = false) {
       if (!ok()) return;
       if (keys) {
-        if (final) { playKey(KEY_N - 1, 0.6); return; }
-        let i; do { i = (Math.random() * (KEY_N - 1)) | 0; } while (i === lastKey); lastKey = i;
+        let i; do { i = (Math.random() * KEY_N) | 0; } while (i === lastKey); lastKey = i;
         playKey(i); return;
       }
       const t = ctx.currentTime + 0.002, f = [880, 988, 1175, 1319, 1480][(Math.random() * 5) | 0];
@@ -68,11 +69,8 @@ const Sound = (() => {
       nz('bandpass', 1800, t + 0.004, 0.03, 0.05, 6);
       if (final) { osc('square', 220, t + 0.02, 0.12, 0.03, 110); osc('sine', 1760, t + 0.03, 0.25, 0.02); }
     },
-    glitch() {
-      if (!ok()) return;
-      const t = ctx.currentTime + 0.002;
-      for (let i = 0; i < 4; i++) osc('square', 300 + Math.random() * 1600, t + i * 0.018, 0.016, 0.03);
-    },
+    // once, when PORTFOLIO is fully typed
+    confirm() { if (ok() && keys) playPart(CONF_AT, CONF_LEN, 0.55); },
     sweep() { if (!ok()) return; const t = ctx.currentTime + 0.002; osc('sawtooth', 180, t, 0.55, 0.02, 1400); nz('bandpass', 400, t, 0.55, 0.05, 2, 3800); },
     slide() {
       if (!ok()) return;
@@ -244,7 +242,7 @@ const Hero = (() => {
     renderer.render(scene, camera);
   });
 
-  gsap.to(uniforms.uScatter, { value: 1, ease: 'none', scrollTrigger: { trigger: section, start: 'top top', end: 'bottom top', scrub: true } });
+  if (reduce) gsap.to(uniforms.uScatter, { value: 1, ease: 'none', scrollTrigger: { trigger: section, start: 'top top', end: 'bottom top', scrub: true } });
   return {
     ready,
     intro(d = 3.4) { gsap.fromTo(uniforms.uIntro, { value: reduce ? 1 : 0 }, { value: 1, duration: reduce ? 0.01 : d, ease: 'none' }); },
@@ -302,6 +300,7 @@ function heroUI() {
   gsap.to('#dock', { opacity: 1, y: 0, duration: 0.9, delay: 1, ease: 'expo.out' });
   document.body.classList.remove('is-loading');
   lenis.start(); ScrollTrigger.sort(); ScrollTrigger.refresh();
+  Dust.arm();
 }
 
 const LANGS = [
@@ -363,7 +362,6 @@ async function runLoader() {
 
   // 3. keep only the I, it slides to PORTFOLIO's I
   const iOld = chs[3], x0 = iOld.getBoundingClientRect().left;
-  Sound.glitch();
   await gsap.to(chs.filter((_, i) => i !== 3), { opacity: 0, y: () => rand(-14, 14), filter: 'blur(6px)', duration: 0.35, stagger: 0.03 });
   word.textContent = 'PORTFOLIO';
   const pchs = splitChars(word, 'chrome');
@@ -376,6 +374,7 @@ async function runLoader() {
   // 4. the rest of PORTFOLIO types in around the I
   const order = [0, 1, 2, 3, 4, 5, 6, 8];
   for (let k = 0; k < order.length; k++) { await typeLetter(pchs[order[k]], 'PORTFOLIO'[order[k]], k === order.length - 1); await wait(0.04); }
+  await wait(0.1); Sound.confirm();   // typing done: one sci-fi confirmation
   await Promise.all([Hero.ready, wait(0.45)]);
 
   // 5. PORTFOLIO glides into the hero, photo assembles
@@ -391,8 +390,7 @@ async function runLoader() {
   heroUI();
 }
 
-/* ================= HERO SCROLL ================= */
-gsap.to('.hero__name', { yPercent: -40, opacity: 0, ease: 'none', scrollTrigger: { trigger: '#hero', start: 'top top', end: 'bottom top', scrub: true } });
+/* hero scroll-out is driven by Dust (below): the word and the photo turn into dust */
 
 /* ================= INTRO ================= */
 const words = splitWords($('#introBig'));
@@ -555,6 +553,178 @@ const Keyboard = (() => {
   mm.add('(max-width: 760px)', () => {
     $$('.jpanel__body').forEach(b => gsap.from(b, { y: 40, opacity: 0, duration: 1, scrollTrigger: { trigger: b, start: 'top 85%' } }));
   });
+})();
+
+/* ================= DUST: PORTFOLIO + photo blow away, gather into "Three roads." =================
+   A fixed overlay of points in screen px. Each point starts on a pixel of the hero (PORTFOLIO glyphs or the photo),
+   blows up into a faint cloud while the hero scrolls out (e1), floats behind the intro, then swirls into a pixel of
+   the Journey title as it arrives (e3). Everything is a function of scrollY, so scrolling up plays it backwards. */
+const Dust = (() => {
+  if (reduce) return { arm() {} };
+  const hero = $('#hero'), heroCanvas = $('#heroCanvas'), heroSub = $('.hero__sub');
+  const title = $('.jpanel--intro .jpanel__title'), journey = $('#journey'), track = $('#journeyTrack');
+  const cv = document.createElement('canvas'); cv.className = 'dust'; cv.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(cv);
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: false, powerPreference: 'high-performance' }); }
+  catch (e) { cv.remove(); return { arm() {} }; }
+  const pr = Math.min(devicePixelRatio, 1.5); renderer.setPixelRatio(pr);
+  const scene = new THREE.Scene(), camera = new THREE.Camera();
+  const U = { uScroll: { value: 0 }, uPin: { value: 1e9 }, uE1: { value: 0 }, uE3: { value: 0 }, uTime: { value: 0 }, uOut: { value: 1 },
+    uRes: { value: new THREE.Vector2(1, 1) }, uPR: { value: pr } };
+  const mat = new THREE.ShaderMaterial({
+    uniforms: U, transparent: true, depthTest: false, depthWrite: false,
+    vertexShader: `
+      uniform float uScroll,uPin,uE1,uE3,uTime,uPR; uniform vec2 uRes;
+      attribute vec2 aTgt, aCloud; attribute vec4 aRnd; attribute vec3 aC0, aC1; attribute float aSize;
+      varying vec3 vCol; varying float vA;
+      float ease(float x){ return x*x*(3.-2.*x); }
+      void main(){
+        vec2 s = position.xy - vec2(0., uScroll);                       // on the hero, moving up with the page
+        float k1 = ease(clamp((uE1 - aRnd.x*0.35) / 0.65, 0., 1.));     // staggered break-up
+        vec2 cloud = aCloud + vec2(sin(uTime*.25 + aRnd.z*20.)*26., cos(uTime*.21 + aRnd.w*17.)*20.);
+        vec2 wind = vec2((aRnd.y - .5)*320. + sin(uTime*.8 + aRnd.z*30.)*30., -140. - aRnd.w*300.) * sin(3.14159*k1);
+        vec2 p = mix(s, cloud, k1) + wind;
+        float k3 = ease(clamp((uE3 - (1. - aRnd.x)*0.3) / 0.7, 0., 1.)); // staggered gathering
+        vec2 t = aTgt - vec2(0., min(uScroll, uPin));                     // the title, moving with its section
+        float an = aRnd.z*6.2832 + k3*4.;
+        vec2 swirl = vec2(cos(an), sin(an)) * (60. + aRnd.y*160.) * sin(3.14159*k3);
+        p = mix(p, t, k3) + swirl;
+        gl_Position = vec4(p.x / uRes.x * 2. - 1., 1. - p.y / uRes.y * 2., 0., 1.);
+        gl_PointSize = aSize * uPR * (1. + 0.35*sin(3.14159*k1));
+        vCol = mix(aC0, aC1, k3);
+        vA = mix(mix(1., .3, k1), 1., k3);
+      }`,
+    fragmentShader: `
+      uniform float uOut; varying vec3 vCol; varying float vA;
+      void main(){ vec2 c = gl_PointCoord - .5; float r = length(c); if (r > .5) discard;
+        gl_FragColor = vec4(vCol, smoothstep(.5, .15, r) * vA * uOut); }`,
+  });
+  let points = null, armed = false, active = false, H = 1, e1a = 0, e1b = 1, e3a = 0, e3b = 1, lastE1 = 0;
+
+  const photo = new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = 'images/abhishek-p.png'; });
+  // chrome gradient of the hero word (.chrome), as a grey value 0..1 down the glyph
+  const CHROME = [[0, 1], [.2, .95], [.4, .81], [.56, .57], [.68, .66], [.86, .9], [1, 1]];
+  const chrome = t => { for (let i = 1; i < CHROME.length; i++) if (t <= CHROME[i][0]) { const [a, va] = CHROME[i - 1], [b, vb] = CHROME[i]; return va + (vb - va) * (t - a) / (b - a); } return 1; };
+  const rgb = s => (s.match(/[\d.]+/g) || [255, 255, 255]).slice(0, 3).map(v => v / 255);
+
+  // every visible pixel of the given characters, in viewport px: [{x, y, ch: {top, h}, col}]
+  function glyphPixels(chars, step) {
+    let L = 1e9, T = 1e9, R = -1e9, B = -1e9;
+    chars.forEach(c => { L = Math.min(L, c.r.left); T = Math.min(T, c.r.top); R = Math.max(R, c.r.right); B = Math.max(B, c.r.bottom); });
+    const pad = 20, w = Math.ceil(R - L) + pad * 2, h = Math.ceil(B - T) + pad * 2;
+    if (!isFinite(w) || w < 2 || h < 2) return [];
+    const c2 = document.createElement('canvas'); c2.width = w; c2.height = h;
+    const x = c2.getContext('2d', { willReadFrequently: true });
+    const out = [], owner = new Int16Array(w * h).fill(-1);
+    chars.forEach((c, i) => {
+      x.font = c.font; if ('fontStretch' in x) x.fontStretch = c.stretch;
+      const m = x.measureText(c.t), asc = m.fontBoundingBoxAscent || c.r.height * .8, desc = m.fontBoundingBoxDescent || c.r.height * .2;
+      const base = c.r.top - T + pad + (c.r.height - (asc + desc)) / 2 + asc;
+      x.clearRect(0, 0, w, h); x.fillText(c.t, c.r.left - L + pad, base);
+      const d = x.getImageData(0, 0, w, h).data;
+      for (let yy = 0; yy < h; yy += step) for (let xx = 0; xx < w; xx += step)
+        if (d[(yy * w + xx) * 4 + 3] > 140) out.push({ x: xx + L - pad, y: yy + T - pad, c });
+    });
+    return out;
+  }
+  const charsOf = (root, fn) => {
+    const list = [], walk = n => {
+      if (n.nodeType === 3) {
+        const st = getComputedStyle(n.parentElement);
+        for (let i = 0; i < n.length; i++) {
+          const t = n.data[i]; if (!t.trim()) continue;
+          const rg = document.createRange(); rg.setStart(n, i); rg.setEnd(n, i + 1);
+          const r = rg.getBoundingClientRect(); if (!r.width) continue;
+          list.push({ t, r: fn ? fn(r) : r, font: `${st.fontStyle} ${st.fontWeight} ${st.fontSize} ${st.fontFamily}`,
+            stretch: /wdth"?\s*12\d/.test(st.fontVariationSettings) ? 'expanded' : 'normal', col: rgb(st.color) });
+        }
+      } else n.childNodes.forEach(walk);
+    };
+    walk(root); return list;
+  };
+
+  async function build() {
+    const im = await photo; await document.fonts.ready;
+    const W = innerWidth, VH = innerHeight, sm = small(), sy = scrollY;
+    H = hero.offsetHeight; const heroTop = hero.getBoundingClientRect().top + sy;
+    const h1 = $('#heroName'), h1r = h1.getBoundingClientRect();
+    // --- start points (page coords at scroll 0) ---
+    const S = [], C0 = [], SZ = [];
+    const word = glyphPixels(charsOf(h1, r => ({ left: r.left, right: r.right, top: r.top + sy - heroTop, bottom: r.bottom + sy - heroTop, height: r.height })), sm ? 3 : 2);
+    const nWord = sm ? 2600 : 5200;
+    for (let i = 0; i < nWord && word.length; i++) {
+      const p = word[(Math.random() * word.length) | 0], g = chrome(Math.min(1, Math.max(0, (p.y - p.c.r.top) / p.c.r.height)));
+      S.push(p.x + Math.random() * 2 - 1, p.y + heroTop + Math.random() * 2 - 1); C0.push(g, g, g); SZ.push(sm ? 2.2 : 2.4);
+    }
+    if (im) {
+      const iw = im.width, ih = im.height, asp = iw / ih, Wh = hero.clientWidth, Hh = hero.clientHeight;
+      const ph = Math.min(0.9 * Hh, 0.96 * Wh / asp), pw = ph * asp, left = (Wh - pw) / 2, top = Hh - ph;
+      const cut = h1r.bottom + sy - heroTop;                          // the photo is masked out below the word
+      const c2 = document.createElement('canvas'); c2.width = iw; c2.height = ih;
+      const x = c2.getContext('2d', { willReadFrequently: true }); x.drawImage(im, 0, 0);
+      const d = x.getImageData(0, 0, iw, ih).data, step = sm ? 6 : 4;
+      for (let yy = 0; yy < ih; yy += step) for (let xx = 0; xx < iw; xx += step) {
+        const k = (yy * iw + xx) * 4; if (d[k + 3] < 120) continue;
+        const l = Math.min(1, 0.04 + (d[k] * .3 + d[k + 1] * .59 + d[k + 2] * .11) / 255 * 1.05);
+        if (Math.random() > 0.35 + l * 0.65) continue;                // dark pixels are mostly invisible on the hero too
+        const px = left + ((xx + Math.random() * step) / iw) * pw, py = top + ((yy + Math.random() * step) / ih) * ph;   // jitter: no grid
+        if (py > cut) continue;
+        S.push(px, py + heroTop); const g = Math.pow(l, .85) * .9; C0.push(g, g, g); SZ.push(sm ? 2 : 2.1);
+      }
+    }
+    const N = S.length / 2; if (!N) return;
+    // --- target: the Journey title, document coords at the moment it settles ---
+    const jt = ScrollTrigger.getAll().find(t => t.pin === journey);
+    const tx = track.getBoundingClientRect().left;                    // undo the horizontal scroll, if any
+    let tOff, endScroll;
+    if (jt) { tOff = jt.start - journey.getBoundingClientRect().top; endScroll = jt.start; U.uPin.value = jt.start; }
+    else { const r = title.getBoundingClientRect(); endScroll = r.top + sy - VH * 0.32; tOff = sy; U.uPin.value = 1e9; }
+    const tgt = glyphPixels(charsOf(title, r => ({ left: r.left - tx, right: r.right - tx, top: r.top + tOff, bottom: r.bottom + tOff, height: r.height })), sm ? 2 : 2);
+    const A = new Float32Array(N * 2), CL = new Float32Array(N * 2), R4 = new Float32Array(N * 4), C1 = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      const p = tgt.length ? tgt[(Math.random() * tgt.length) | 0] : { x: W / 2, y: endScroll + VH / 2, c: { col: [1, 1, 1] } };
+      A[i * 2] = p.x; A[i * 2 + 1] = p.y; C1.set(p.c.col, i * 3);
+      CL[i * 2] = W * (0.04 + Math.random() * 0.92); CL[i * 2 + 1] = VH * (0.08 + Math.pow(Math.random(), 1.2) * 0.84);
+      R4[i * 4] = Math.random(); R4[i * 4 + 1] = Math.random(); R4[i * 4 + 2] = Math.random(); R4[i * 4 + 3] = Math.random();
+    }
+    const g = new THREE.BufferGeometry(), pos = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) { pos[i * 3] = S[i * 2]; pos[i * 3 + 1] = S[i * 2 + 1]; }
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('aTgt', new THREE.BufferAttribute(A, 2)); g.setAttribute('aCloud', new THREE.BufferAttribute(CL, 2));
+    g.setAttribute('aRnd', new THREE.BufferAttribute(R4, 4)); g.setAttribute('aC0', new THREE.Float32BufferAttribute(C0, 3));
+    g.setAttribute('aC1', new THREE.BufferAttribute(C1, 3)); g.setAttribute('aSize', new THREE.Float32BufferAttribute(SZ, 1));
+    if (points) { scene.remove(points); points.geometry.dispose(); }
+    points = new THREE.Points(g, mat); points.frustumCulled = false; scene.add(points);
+    renderer.setSize(W, VH, false); U.uRes.value.set(W, VH);
+    e1a = heroTop + H * 0.03; e1b = heroTop + H * 0.78;
+    e3b = endScroll; e3a = Math.max(e1b, endScroll - VH * 0.95);
+  }
+  let pending = null;
+  const rebuild = () => { clearTimeout(pending); pending = setTimeout(() => build().then(tick), 60); };
+  ScrollTrigger.addEventListener('refresh', () => { if (armed) rebuild(); });
+
+  const clamp01 = v => Math.max(0, Math.min(1, v));
+  function tick() {
+    if (!armed || !points) return;
+    const y = scrollY, e1 = clamp01((y - e1a) / (e1b - e1a)), e3 = clamp01((y - e3a) / (e3b - e3a));
+    if (e1 > 0 || lastE1 > 0) {                                         // (at the top, leave the intro's own fades alone)
+      const fade = clamp01(e1 / 0.06);                                  // hand the hero over to the dust
+      heroCanvas.style.opacity = 1 - fade; heroH1.style.opacity = 1 - fade;
+      heroSub.style.opacity = 1 - clamp01(e1 / 0.35);
+    }
+    lastE1 = e1;
+    title.style.opacity = clamp01((e3 - 0.86) / 0.14);
+    const on = e1 > 0 && e3 < 1;
+    if (on !== active) { active = on; cv.style.display = on ? 'block' : 'none'; }
+    if (!on) return;
+    U.uScroll.value = y; U.uE1.value = e1; U.uE3.value = e3; U.uTime.value = performance.now() / 1000;
+    U.uOut.value = 1 - clamp01((e3 - 0.93) / 0.07);
+    renderer.render(scene, camera);
+  }
+  gsap.ticker.add(tick);
+  addEventListener('resize', () => { if (armed) rebuild(); });
+  return { arm() { if (armed) return; armed = true; build().then(tick); } };
 })();
 
 /* ================= SERVICES ================= */

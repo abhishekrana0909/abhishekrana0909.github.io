@@ -76,7 +76,7 @@ img{display:block;max-width:100%}
 
 /* ---------- HERO ---------- */
 .hero{position:relative;height:100vh;height:100svh;min-height:560px;overflow:hidden;
-  background:radial-gradient(circle at 50% var(--glowY,30%),#1c1c1c 0,#0c0c0c 15vmin,#030303 30vmin,#000 42vmin),#000}
+  background:#000}
 .hero__canvas{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:0}
 .hero__name{z-index:2}
 .hero__fallback{display:none;position:absolute;left:50%;bottom:0;height:88%;width:auto;transform:translateX(-50%);filter:grayscale(1) contrast(1.05)}
@@ -105,7 +105,7 @@ img{display:block;max-width:100%}
   .hero__line{text-align:center;font-size:13px}
   .hero__role{align-items:center}
   .hero__hint{display:none}
-  .hero{--glowY:44%}
+
   .hero__name{bottom:84px}
 }
 
@@ -280,3 +280,6 @@ img{display:block;max-width:100%}
 
 /* mobile: back-to-top sits above the dock */
 @media (max-width:760px){.totop{bottom:84px;width:50px;height:50px}}
+
+/* scroll dust overlay (js Dust): above sections, below nav/dock */
+.dust{position:fixed;inset:0;width:100%;height:100%;z-index:40;pointer-events:none;display:none}
