@@ -16,6 +16,9 @@ const Sound = (() => {
   // sprite: 7 keystrokes sliced from Mixkit "Typing on an electronic device" (KEY_SLOT s each),
   // then Mixkit "Sci Fi confirmation" at CONF_AT for CONF_LEN s (played once, after PORTFOLIO is typed)
   const KEY_SLOT = 0.12, KEY_N = 7, CONF_AT = 0.84, CONF_LEN = 1.1;
+  // one-shot effects (Mixkit, trimmed): name -> buffer. Peaks: fall .256s, impact .932s, dust .03s, gather 1.439s, snap .088s, slide .226s
+  const FX = ['fall', 'impact', 'dust', 'gather', 'snap', 'slide'], fxBuf = {};
+  const fxData = Object.fromEntries(FX.map(n => [n, fetch(`audio/fx/${n}.mp3?v=1`).then(r => r.ok ? r.arrayBuffer() : null).catch(() => null)]));
   const keyData = fetch('audio/type-hud.wav?v=1').then(r => r.ok ? r.arrayBuffer() : null).catch(() => null);
   const init = () => {
     if (ctx) return;
@@ -26,6 +29,7 @@ const Sound = (() => {
     noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     keyData.then(b => b && new Promise((res, rej) => ctx.decodeAudioData(b, res, rej))).then(buf => { if (buf) keys = buf; }).catch(() => {});
+    FX.forEach(n => fxData[n].then(b => b && new Promise((res, rej) => ctx.decodeAudioData(b, res, rej))).then(buf => { if (buf) fxBuf[n] = buf; }).catch(() => {}));
   };
   const playPart = (at, len, v, rate = 1) => {
     const s = ctx.createBufferSource(), g = ctx.createGain();
@@ -68,6 +72,11 @@ const Sound = (() => {
       nz('highpass', 5200, t, 0.012, 0.09, 0.7);
       nz('bandpass', 1800, t + 0.004, 0.03, 0.05, 6);
       if (final) { osc('square', 220, t + 0.02, 0.12, 0.03, 110); osc('sine', 1760, t + 0.03, 0.25, 0.02); }
+    },
+    fx(name, vol = 0.8) {
+      if (!ok() || !fxBuf[name]) return;
+      const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = fxBuf[name]; g.gain.value = vol;
+      src.connect(g).connect(out); src.start(ctx.currentTime + 0.002);
     },
     // once, when PORTFOLIO is fully typed
     confirm() { if (ok() && keys) playPart(CONF_AT, CONF_LEN, 0.55); },
@@ -310,18 +319,48 @@ async function typeLetter(span, ch, final = false) {
   gsap.fromTo(span, { filter: 'brightness(2.2)' }, { filter: 'brightness(1)', duration: 0.35 });
 }
 
-/* real AK-47 (Pixabay 872500, background removed), facing right; the muzzle sits 22.3% down the image */
-const RIFLE = { src: 'images/rifle.webp', aspect: 3.49, muzzle: [0.985, 0.223], grip: [0.30, 0.55] };   // fractions of the image box
-function flashAt(parent, x, y, deg) {          // deg: direction the shot travels (0 = right, -90 = up)
-  const f = document.createElement('i'); f.className = 'gun-flash'; parent.appendChild(f);
-  gsap.set(f, { left: x, top: y, xPercent: -50, yPercent: -50, rotation: deg });
-  gsap.fromTo(f, { scale: 0.3, opacity: 1 }, { scale: 1.5, opacity: 0, duration: 0.2, ease: 'power2.out', onComplete: () => f.remove() });
+/* dust kicked up where the letters land: a short-lived canvas of soft grains and puffs */
+function dustBurst(parent, points, fs) {
+  const cv = document.createElement('canvas'), dpr = Math.min(devicePixelRatio, 2), W = innerWidth, H = innerHeight;
+  cv.className = 'dust-burst'; cv.width = W * dpr; cv.height = H * dpr; parent.appendChild(cv);
+  const c = cv.getContext('2d'); c.scale(dpr, dpr);
+  // one soft dot, drawn once and stamped per particle (much cheaper than a gradient per particle per frame)
+  const dot = document.createElement('canvas'); dot.width = dot.height = 64;
+  const dc = dot.getContext('2d'), dg = dc.createRadialGradient(32, 32, 0, 32, 32, 32);
+  dg.addColorStop(0, 'rgba(214,206,194,1)'); dg.addColorStop(1, 'rgba(214,206,194,0)'); dc.fillStyle = dg; dc.fillRect(0, 0, 64, 64);
+  const ps = [];
+  points.forEach(([x, y]) => {
+    for (let k = 0; k < 34; k++) {                                   // grains
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      ps.push({ x: x + rand(-fs * 0.2, fs * 0.2), y, vx: dir * rand(40, 300), vy: -rand(30, 230), r: rand(0.8, 2.6), life: rand(0.6, 1.4), t: 0, a: rand(0.5, 0.9), g: 260 });
+    }
+    for (let k = 0; k < 5; k++)                                       // soft clouds
+      ps.push({ x: x + rand(-fs * 0.3, fs * 0.3), y: y - rand(0, fs * 0.15), vx: rand(-60, 60), vy: -rand(10, 50), r: rand(fs * 0.15, fs * 0.3), grow: rand(fs * 0.5, fs * 1.1), life: rand(1, 1.7), t: 0, a: rand(0.12, 0.22), g: 0, cloud: true });
+  });
+  let last = performance.now();
+  const step = now => {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    c.clearRect(0, 0, W, H); let alive = 0;
+    for (const p of ps) {
+      p.t += dt; if (p.t >= p.life) continue; alive++;
+      p.vx *= 1 - dt * 2.2; p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+      const k = 1 - p.t / p.life, r = p.cloud ? p.r + p.grow * (1 - k) : p.r;
+      c.globalAlpha = p.a * k; c.drawImage(dot, p.x - r, p.y - r, r * 2, r * 2);
+    }
+    c.globalAlpha = 1;
+    if (alive) requestAnimationFrame(step); else cv.remove();
+  };
+  requestAnimationFrame(step);
+}
+function shake(el, amp, n = 9) {
+  const tl = gsap.timeline();
+  for (let k = 0; k < n; k++) { const a = amp * (1 - k / n); tl.to(el, { x: rand(-a, a), y: rand(-a, a), duration: 0.045, ease: 'none' }); }
+  return tl.to(el, { x: 0, y: 0, duration: 0.08 });
 }
 
 async function runLoader() {
   const loader = $('#loader'), word = $('#loaderWord'), glow = $('.loader__glow'), count = $('#loaderCount');
   const gate = $('#gate');
-  const rifleImg = new Image(); rifleImg.src = RIFLE.src;   // loads while the gate waits
   if (reduce) { loader.remove(); gsap.set(heroH1, { opacity: 1 }); await Hero.ready; Hero.intro(); heroUI(); return; }
 
   // click to enter (browsers only allow sound after a click)
@@ -339,62 +378,52 @@ async function runLoader() {
   const c = { v: 0 };
   gsap.to(c, { v: 100, duration: 6, ease: 'power1.inOut', onUpdate: () => { count.textContent = String(Math.round(c.v)).padStart(3, '0'); } });
 
-  // 1. a real rifle drops in below the word and fires ABHISHEK out of itself: A, B, H to the left, then K, E, H, S to the right
+  // 1. ABHISHEK drops in all at once, scattered and tilted; dust + shake on landing; then the letters pull back into the word
   gsap.to(glow, { scale: 0.3, opacity: 0, duration: 0.4 });
   word.className = 'loader__word name'; gsap.set(word, { opacity: 1, filter: 'none' });
   word.textContent = 'ABHISHEK';
   const chs = splitChars(word, 'chrome');
   chs.forEach(s => { s.style.opacity = 0; });
-  await Promise.race([Promise.all([document.fonts.load(getComputedStyle(word).font, 'ABHISHEK').catch(() => {}), rifleImg.decode().catch(() => {})]), wait(1)]);
-  const fs = parseFloat(getComputedStyle(word).fontSize), ir = chs[3].getBoundingClientRect(), mob = innerWidth < 761;
-  const capBottom = ir.top + ir.height / 2 + fs * 0.35;              // Bebas caps are ~0.7em tall
-  const gunW = Math.min(fs * (mob ? 3.2 : 2.3), innerWidth * (mob ? 0.62 : 0.5)), gunH = gunW / RIFLE.aspect;
-  // the rifle turns about its grip (like a shooter would); O = the grip's screen point, under the I
-  const [pgx, pgy] = RIFLE.grip, Ox = ir.left + ir.width / 2, Oy = capBottom + fs * 0.25 + gunH * pgy;
-  const gx = Ox + (0.5 - pgx) * gunW, gy = Oy + (0.5 - pgy) * gunH;   // box centre that puts the grip on O
-  const gun = document.createElement('div'); gun.className = 'gun';
-  gun.innerHTML = `<img src="${RIFLE.src}" alt="" width="1267" height="363">`; gun.style.width = gunW + 'px';
-  loader.appendChild(gun);
-  gsap.set(gun, { xPercent: -50, yPercent: -50, transformOrigin: `${pgx * 100}% ${pgy * 100}%`, x: gx, y: -gunH * 2, rotation: -22 });
-  await gsap.to(gun, { y: gy, rotation: 0, duration: 0.6, ease: 'power2.in' });          // falls
-  gsap.fromTo(loader, { y: 8 }, { y: 0, duration: 0.25, ease: 'power3.out' });
-  await gsap.to(gun, { keyframes: [{ y: gy - gunH * 0.35, rotation: 4, duration: 0.13, ease: 'power2.out' }, { y: gy, rotation: 0, duration: 0.2, ease: 'bounce.out' }] });
-  const D2R = Math.PI / 180;
-  const ml = [(RIFLE.muzzle[0] - pgx) * gunW, (RIFLE.muzzle[1] - pgy) * gunH];       // muzzle relative to the grip, unturned
-  // aim: rotate about the grip so the barrel line (ml[1] above the grip) runs through letter i, then fire it out of the muzzle
-  const fire = async (i, dir) => {
-    const s = chs[i], r = s.getBoundingClientRect(), tx = r.left + r.width / 2 - Ox, ty = r.top + r.height / 2 - Oy;
-    const dist = Math.hypot(tx, ty), off = -ml[1];
-    const th = Math.atan2(ty, tx) / D2R + dir * Math.asin(Math.min(1, off / dist)) / D2R;   // shot direction
-    const rot = ((dir > 0 ? th : th - 180) + 540) % 360 - 180;
-    await gsap.to(gun, { rotation: rot, duration: 0.13, ease: 'power2.out' });
-    const c = Math.cos(rot * D2R), n = Math.sin(rot * D2R), lx = dir * ml[0], ly = ml[1];
-    const mx = Ox + lx * c - ly * n, my = Oy + lx * n + ly * c;
-    s.style.opacity = 1; Sound.type();
-    flashAt(loader, mx, my, th);
-    const k = gunW * 0.04, ta = th * D2R;
-    gsap.fromTo(gun, { x: gx - Math.cos(ta) * k, y: gy - Math.sin(ta) * k, rotation: rot - dir * 3 }, { x: gx, y: gy, rotation: rot, duration: 0.24, ease: 'power3.out' });   // recoil
-    gsap.fromTo(loader, { x: rand(-6, 6), y: rand(-5, 5) }, { x: 0, y: 0, duration: 0.2, ease: 'power3.out' });                        // shake
-    await gsap.fromTo(s, { x: mx - (r.left + r.width / 2), y: my - (r.top + r.height / 2), scaleX: 1.8, scaleY: 0.5, filter: 'blur(5px)' },
-      { x: 0, y: 0, scaleX: 1, scaleY: 1, filter: 'blur(0px)', duration: 0.2, ease: 'power4.out' });
-    gsap.fromTo(s, { filter: 'brightness(2.4)' }, { filter: 'brightness(1)', duration: 0.35 });
-    await wait(0.07);
-  };
-  await gsap.to(gun, { scaleX: -1, duration: 0.22, ease: 'power2.inOut' });               // turn left (about the grip)
-  for (const i of [0, 1, 2]) await fire(i, -1);
-  await gsap.to(gun, { scaleX: 1, rotation: 0, duration: 0.26, ease: 'power2.inOut' });   // turn right
-  for (const i of [7, 6, 5, 4]) await fire(i, 1);
-  // the rifle stands up (muzzle up), shrinks into the I's slot and becomes the real I
-  const ir2 = chs[3].getBoundingClientRect(), icx = ir2.left + ir2.width / 2, icy = ir2.top + ir2.height / 2;
-  const sx = (fs * 0.72) / gunW, sy = sx * 0.8;
-  // origin at the grip, rotation -90 maps (u,v) -> (v,-u): solve the box translate so the rifle's visual centre sits on the I
-  const fx = icx + (0.5 - pgx) * gunW - (0.5 - pgy) * gunH * sy, fy = icy + (0.5 - pgy) * gunH + (0.5 - pgx) * gunW * sx;
-  await gsap.to(gun, { x: fx, y: fy, rotation: -90, scaleX: sx, scaleY: sy, duration: 0.42, ease: 'power3.inOut' });
-  chs[3].style.opacity = 1; Sound.type();
-  flashAt(loader, icx, icy, -90);
-  gsap.to(gun, { opacity: 0, duration: 0.16, onComplete: () => gun.remove() });
-  await gsap.fromTo(chs[3], { filter: 'brightness(3)', scale: 1.25 }, { filter: 'brightness(1)', scale: 1, duration: 0.4, ease: 'power3.out' });
-  await wait(0.35);
+  await Promise.race([document.fonts.load(getComputedStyle(word).font, 'ABHISHEK').catch(() => {}), wait(0.8)]);
+  const fs = parseFloat(getComputedStyle(word).fontSize), W = innerWidth, H = innerHeight, n = chs.length;
+  const rects = chs.map(s => s.getBoundingClientRect());
+  const mob = W < 761, floorY = mob ? H * 0.68 : Math.min(H * 0.78, rects[0].top + rects[0].height / 2 + fs * 1.4);        // where the letters come to rest
+  const slots = gsap.utils.shuffle([...Array(n).keys()]), spanW = mob ? W * 0.94 : Math.min(W * 0.86, fs * 5.6);
+  const land = chs.map((s, i) => {
+    const r = rects[i], cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const lx = W / 2 - spanW / 2 + (slots[i] + 0.5) * spanW / n + rand(-fs * 0.12, fs * 0.12);
+    return { x: lx - cx, y: floorY - cy + rand(-fs * 0.06, fs * 0.06), rot: (Math.random() < 0.5 ? -1 : 1) * rand(10, 80) };
+  });
+  Sound.fx('impact', 0.9);                                    // its build-up peaks 0.93 s in: on the landing
+  await wait(0.28);
+  Sound.fx('fall', 0.55);
+  chs.forEach((s, i) => {
+    s.style.opacity = 1;
+    gsap.fromTo(s, { x: land[i].x + rand(-W * 0.12, W * 0.12), y: -rects[i].bottom - rand(60, H * 0.45), rotation: rand(-200, 200) },
+      { x: land[i].x, y: land[i].y, rotation: land[i].rot, duration: 0.65, ease: 'power2.in' });   // same time for all: they land together
+  });
+  await wait(0.65);
+  Sound.fx('dust', 0.75);
+  dustBurst(loader, chs.map((s, i) => [rects[i].left + rects[i].width / 2 + land[i].x, floorY + fs * 0.32]), fs);
+  shake(loader, Math.min(22, fs * 0.1));
+  chs.forEach((s, i) => gsap.to(s, { keyframes: [
+    { y: land[i].y - rand(fs * 0.1, fs * 0.28), rotation: land[i].rot + rand(-10, 10), duration: 0.14, ease: 'power2.out' },
+    { y: land[i].y, rotation: land[i].rot, duration: 0.32, ease: 'bounce.out' }] }));
+  await wait(0.7);
+  // 2. the letters lift and swirl home, centre first; the swirl sound peaks as the last one locks
+  Sound.fx('gather', 0.7);
+  await wait(0.19);
+  const homeOrder = [3, 4, 2, 5, 1, 6, 0, 7], tl = gsap.timeline();
+  chs.forEach((s, i) => {
+    const d = homeOrder.indexOf(i) * 0.05;
+    tl.to(s, { y: land[i].y - fs * 0.55, x: land[i].x * 0.85, rotation: land[i].rot * 0.4, duration: 0.3, ease: 'power2.out' }, d)
+      .to(s, { x: 0, y: 0, rotation: 0, duration: 0.6, ease: 'expo.inOut' }, d + 0.3);
+  });
+  gsap.delayedCall(tl.duration() - 0.09, () => Sound.fx('snap', 0.55));   // the clank's peak on the lock
+  await tl;
+  shake(word, fs * 0.04, 5);
+  gsap.fromTo(chs, { filter: 'brightness(2.6)' }, { filter: 'brightness(1)', duration: 0.5, stagger: 0.02 });
+  await wait(0.45);
 
   // 3. keep only the I, it slides to PORTFOLIO's I
   const iOld = chs[3], x0 = iOld.getBoundingClientRect().left;
@@ -404,6 +433,7 @@ async function runLoader() {
   pchs.forEach((s, i) => { if (i !== 7) s.style.opacity = 0; });
   const x1 = pchs[7].getBoundingClientRect().left;
   gsap.set(pchs[7], { x: x0 - x1 });
+  gsap.delayedCall(0.15, () => Sound.fx('slide', 0.6));   // sweep peaks mid-slide
   await gsap.to(pchs[7], { x: 0, duration: 0.75, ease: 'expo.inOut' });
 
   // 4. the rest of PORTFOLIO types in around the I

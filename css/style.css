@@ -283,12 +283,9 @@ img{display:block;max-width:100%}
 .dust{position:fixed;inset:0;width:100%;height:100%;z-index:40;pointer-events:none;display:none}
 
 
-/* intro blaster */
-.gun{position:absolute;left:0;top:0;z-index:3;pointer-events:none;will-change:transform}
-.gun img{display:block;width:100%;height:auto;
-  filter:brightness(1.12) drop-shadow(0 0 1px rgba(255,255,255,.4)) drop-shadow(0 0 18px rgba(255,255,255,.1))}
-.gun-flash{position:absolute;left:0;top:0;z-index:4;width:clamp(40px,5vw,90px);height:clamp(22px,2.6vw,46px);border-radius:50%;pointer-events:none;
-  background:radial-gradient(ellipse at 30% 50%,#fff 0,#ffe0c2 16%,#ff9a3c 38%,rgba(255,122,26,.5) 55%,rgba(255,122,26,0) 72%);mix-blend-mode:screen}
+
+/* intro: landing dust */
+.dust-burst{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
 
 /* Dubai panel photo (Pexels, sovianna 10967626), in colour, a little dimmed */
 .jbg--burj img{opacity:.6;object-position:45% 55%}
