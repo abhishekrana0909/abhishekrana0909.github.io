@@ -311,10 +311,10 @@ async function typeLetter(span, ch, final = false) {
 }
 
 /* real AK-47 (Pixabay 872500, background removed), facing right; the muzzle sits 22.3% down the image */
-const RIFLE = { src: 'images/rifle.webp', aspect: 3.49, muzzleY: 0.223 };
-function flashAt(parent, x, y, dir) {
+const RIFLE = { src: 'images/rifle.webp', aspect: 3.49, muzzle: [0.985, 0.223], grip: [0.30, 0.55] };   // fractions of the image box
+function flashAt(parent, x, y, deg) {          // deg: direction the shot travels (0 = right, -90 = up)
   const f = document.createElement('i'); f.className = 'gun-flash'; parent.appendChild(f);
-  gsap.set(f, { left: x, top: y, xPercent: -50, yPercent: -50, rotation: dir < 0 ? 180 : 0 });
+  gsap.set(f, { left: x, top: y, xPercent: -50, yPercent: -50, rotation: deg });
   gsap.fromTo(f, { scale: 0.3, opacity: 1 }, { scale: 1.5, opacity: 0, duration: 0.2, ease: 'power2.out', onComplete: () => f.remove() });
 }
 
@@ -349,35 +349,49 @@ async function runLoader() {
   const fs = parseFloat(getComputedStyle(word).fontSize), ir = chs[3].getBoundingClientRect(), mob = innerWidth < 761;
   const capBottom = ir.top + ir.height / 2 + fs * 0.35;              // Bebas caps are ~0.7em tall
   const gunW = Math.min(fs * (mob ? 3.2 : 2.3), innerWidth * (mob ? 0.62 : 0.5)), gunH = gunW / RIFLE.aspect;
-  const gx = ir.left + ir.width / 2, gy = capBottom + fs * 0.2 + gunH / 2;
+  // the rifle turns about its grip (like a shooter would); O = the grip's screen point, under the I
+  const [pgx, pgy] = RIFLE.grip, Ox = ir.left + ir.width / 2, Oy = capBottom + fs * 0.25 + gunH * pgy;
+  const gx = Ox + (0.5 - pgx) * gunW, gy = Oy + (0.5 - pgy) * gunH;   // box centre that puts the grip on O
   const gun = document.createElement('div'); gun.className = 'gun';
   gun.innerHTML = `<img src="${RIFLE.src}" alt="" width="1267" height="363">`; gun.style.width = gunW + 'px';
   loader.appendChild(gun);
-  gsap.set(gun, { xPercent: -50, yPercent: -50, x: gx, y: -gunH * 2, rotation: -22 });
+  gsap.set(gun, { xPercent: -50, yPercent: -50, transformOrigin: `${pgx * 100}% ${pgy * 100}%`, x: gx, y: -gunH * 2, rotation: -22 });
   await gsap.to(gun, { y: gy, rotation: 0, duration: 0.6, ease: 'power2.in' });          // falls
   gsap.fromTo(loader, { y: 8 }, { y: 0, duration: 0.25, ease: 'power3.out' });
   await gsap.to(gun, { keyframes: [{ y: gy - gunH * 0.35, rotation: 4, duration: 0.13, ease: 'power2.out' }, { y: gy, rotation: 0, duration: 0.2, ease: 'bounce.out' }] });
+  const D2R = Math.PI / 180;
+  const ml = [(RIFLE.muzzle[0] - pgx) * gunW, (RIFLE.muzzle[1] - pgy) * gunH];       // muzzle relative to the grip, unturned
+  // aim: rotate about the grip so the barrel line (ml[1] above the grip) runs through letter i, then fire it out of the muzzle
   const fire = async (i, dir) => {
-    const gr = gun.getBoundingClientRect(), mx = dir > 0 ? gr.right - gr.width * 0.02 : gr.left + gr.width * 0.02, my = gr.top + gr.height * RIFLE.muzzleY;
-    const s = chs[i], r = s.getBoundingClientRect();
+    const s = chs[i], r = s.getBoundingClientRect(), tx = r.left + r.width / 2 - Ox, ty = r.top + r.height / 2 - Oy;
+    const dist = Math.hypot(tx, ty), off = -ml[1];
+    const th = Math.atan2(ty, tx) / D2R + dir * Math.asin(Math.min(1, off / dist)) / D2R;   // shot direction
+    const rot = ((dir > 0 ? th : th - 180) + 540) % 360 - 180;
+    await gsap.to(gun, { rotation: rot, duration: 0.13, ease: 'power2.out' });
+    const c = Math.cos(rot * D2R), n = Math.sin(rot * D2R), lx = dir * ml[0], ly = ml[1];
+    const mx = Ox + lx * c - ly * n, my = Oy + lx * n + ly * c;
     s.style.opacity = 1; Sound.type();
-    flashAt(loader, mx, my, dir);
-    gsap.fromTo(gun, { x: gx - dir * gunW * 0.06, rotation: -dir * 4 }, { x: gx, rotation: 0, duration: 0.24, ease: 'power3.out' });   // recoil
+    flashAt(loader, mx, my, th);
+    const k = gunW * 0.04, ta = th * D2R;
+    gsap.fromTo(gun, { x: gx - Math.cos(ta) * k, y: gy - Math.sin(ta) * k, rotation: rot - dir * 3 }, { x: gx, y: gy, rotation: rot, duration: 0.24, ease: 'power3.out' });   // recoil
     gsap.fromTo(loader, { x: rand(-6, 6), y: rand(-5, 5) }, { x: 0, y: 0, duration: 0.2, ease: 'power3.out' });                        // shake
     await gsap.fromTo(s, { x: mx - (r.left + r.width / 2), y: my - (r.top + r.height / 2), scaleX: 1.8, scaleY: 0.5, filter: 'blur(5px)' },
       { x: 0, y: 0, scaleX: 1, scaleY: 1, filter: 'blur(0px)', duration: 0.2, ease: 'power4.out' });
     gsap.fromTo(s, { filter: 'brightness(2.4)' }, { filter: 'brightness(1)', duration: 0.35 });
     await wait(0.07);
   };
-  await gsap.to(gun, { scaleX: -1, duration: 0.22, ease: 'power2.inOut' });               // face left
+  await gsap.to(gun, { scaleX: -1, duration: 0.22, ease: 'power2.inOut' });               // turn left (about the grip)
   for (const i of [0, 1, 2]) await fire(i, -1);
-  await gsap.to(gun, { scaleX: 1, duration: 0.24, ease: 'power2.inOut' });                // face right
+  await gsap.to(gun, { scaleX: 1, rotation: 0, duration: 0.26, ease: 'power2.inOut' });   // turn right
   for (const i of [7, 6, 5, 4]) await fire(i, 1);
-  // the blaster stands up and becomes the real I
-  const ir2 = chs[3].getBoundingClientRect();
-  await gsap.to(gun, { x: ir2.left + ir2.width / 2, y: ir2.top + ir2.height / 2, rotation: -90, scaleX: (fs * 0.72) / gunW, scaleY: (fs * 0.72) / gunW * 0.8, duration: 0.42, ease: 'power3.inOut' });
+  // the rifle stands up (muzzle up), shrinks into the I's slot and becomes the real I
+  const ir2 = chs[3].getBoundingClientRect(), icx = ir2.left + ir2.width / 2, icy = ir2.top + ir2.height / 2;
+  const sx = (fs * 0.72) / gunW, sy = sx * 0.8;
+  // origin at the grip, rotation -90 maps (u,v) -> (v,-u): solve the box translate so the rifle's visual centre sits on the I
+  const fx = icx + (0.5 - pgx) * gunW - (0.5 - pgy) * gunH * sy, fy = icy + (0.5 - pgy) * gunH + (0.5 - pgx) * gunW * sx;
+  await gsap.to(gun, { x: fx, y: fy, rotation: -90, scaleX: sx, scaleY: sy, duration: 0.42, ease: 'power3.inOut' });
   chs[3].style.opacity = 1; Sound.type();
-  flashAt(loader, ir2.left + ir2.width / 2, ir2.top + ir2.height / 2, 1);
+  flashAt(loader, icx, icy, -90);
   gsap.to(gun, { opacity: 0, duration: 0.16, onComplete: () => gun.remove() });
   await gsap.fromTo(chs[3], { filter: 'brightness(3)', scale: 1.25 }, { filter: 'brightness(1)', scale: 1, duration: 0.4, ease: 'power3.out' });
   await wait(0.35);
