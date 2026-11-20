@@ -319,6 +319,10 @@ async function runLoader() {
   const gate = $('#gate'), hello = $('#hello'), helloText = $('text', hello);
   if (reduce) { loader.remove(); gsap.set(heroH1, { opacity: 1 }); await Hero.ready; Hero.intro(); heroUI(); return; }
 
+  // greeting fonts start loading now, while the gate waits for the click
+  const LANG_FONT = { '': '"Instrument Serif"', hi: '"Tiro Devanagari Hindi"', pa: '"Noto Sans Gurmukhi"', ja: '"Noto Serif JP"', ar: '"Noto Naskh Arabic"' };
+  const langFonts = Promise.all([document.fonts.load('230px Sacramento', 'hello'),
+    ...LANGS.map(([txt, cls]) => document.fonts.load(`400 120px ${LANG_FONT[cls] || LANG_FONT['']}`, txt))]).catch(() => {});
   // click to enter (browsers only allow sound after a click)
   gsap.fromTo(glow, { scale: 0 }, { scale: 1, duration: 0.8, ease: 'back.out(3)' });
   gsap.to(glow, { scale: 1.35, duration: 1.2, yoyo: true, repeat: -1, ease: 'sine.inOut' });
@@ -337,7 +341,19 @@ async function runLoader() {
   // 1. greeting, about 3 seconds, silent
   gsap.to(glow, { scale: 0.3, opacity: 0, duration: 0.4 });
   await document.fonts.load('230px Sacramento').catch(() => {});
-  gsap.set(hello, { opacity: 1 });
+  // a fixed orange dot on the left; every greeting starts just right of it (group centred on the widest one)
+  const setLang = (txt, cls) => { word.className = 'loader__word lang' + (cls ? ' lang-' + cls : ''); word.textContent = txt; };
+  gsap.set(word, { opacity: 0 });
+  await Promise.race([langFonts, wait(0.6)]);   // normally already loaded while the gate waited
+  const helloLeft = () => helloText.getBoundingClientRect().left;
+  const widths = [helloText.getBoundingClientRect().width, ...LANGS.map(([txt, cls]) => { setLang(txt, cls); return word.getBoundingClientRect().width; })];
+  word.textContent = '';
+  const gap = innerWidth < 761 ? 22 : 36, widest = Math.min(Math.max(...widths), innerWidth - 2 * gap - 40);
+  const startX = (innerWidth - widest + gap) / 2;
+  const gdot = document.createElement('i'); gdot.className = 'greet-dot'; loader.appendChild(gdot);
+  gsap.set(gdot, { left: startX - gap / 2, xPercent: -50, yPercent: -50, scale: 0 });
+  gsap.to(gdot, { scale: 1, duration: 0.45, ease: 'back.out(3)' });
+  gsap.set(hello, { opacity: 1 }); gsap.set(hello, { x: '+=' + (startX - helloLeft()) });
   gsap.set(helloText, { strokeDasharray: 2600, strokeDashoffset: 2600, fillOpacity: 0 });
   await gsap.to(helloText, { strokeDashoffset: 0, duration: 1, ease: 'power1.inOut' });
   await gsap.to(helloText, { fillOpacity: 1, duration: 0.2 });
@@ -345,13 +361,15 @@ async function runLoader() {
   await gsap.to(hello, { opacity: 0, filter: 'blur(8px)', duration: 0.18 });
   hello.remove();
   for (const [txt, cls] of LANGS) {
-    word.className = 'loader__word lang' + (cls ? ' lang-' + cls : ''); word.textContent = txt;
+    setLang(txt, cls); gsap.set(word, { x: 0 }); gsap.set(word, { x: startX - word.getBoundingClientRect().left });
     await gsap.fromTo(word, { opacity: 0, filter: 'blur(10px)' }, { opacity: 1, filter: 'blur(0px)', duration: 0.08 });
     await wait(0.08);
     await gsap.to(word, { opacity: 0, duration: 0.05 });
   }
+  await gsap.to(gdot, { scale: 0, opacity: 0, duration: 0.2, ease: 'power2.in' }); gdot.remove();   // gone before the name
 
   // 2. ABHISHEK typed, robotic sound
+  gsap.set(word, { x: 0 });
   word.className = 'loader__word name'; gsap.set(word, { opacity: 1, filter: 'none' });
   word.textContent = 'ABHISHEK';
   const chs = splitChars(word, 'chrome');

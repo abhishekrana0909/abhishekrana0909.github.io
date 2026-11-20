@@ -283,3 +283,9 @@ img{display:block;max-width:100%}
 
 /* scroll dust overlay (js Dust): above sections, below nav/dock */
 .dust{position:fixed;inset:0;width:100%;height:100%;z-index:40;pointer-events:none;display:none}
+
+/* intro: fixed orange dot left of the greetings */
+.greet-dot{position:absolute;top:50%;width:clamp(10px,1.1vw,16px);height:clamp(10px,1.1vw,16px);border-radius:50%;background:var(--saffron);
+  box-shadow:0 0 14px rgba(255,122,26,.75),0 0 40px rgba(255,122,26,.35);pointer-events:none;z-index:2}
+.greet-dot::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--saffron);animation:gdping 1.1s ease-out infinite}
+@keyframes gdping{0%{transform:scale(1);opacity:.6}100%{transform:scale(2.8);opacity:0}}
