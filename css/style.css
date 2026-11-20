@@ -1,5 +1,5 @@
 :root{
-  --bg:#050505;--bg2:#0c0c0c;--fg:#f2f0eb;--muted:#8d8a83;--dim:#4a4844;
+  --bg:#000;--bg2:#0c0c0c;--fg:#f2f0eb;--muted:#8d8a83;--dim:#4a4844;
   --line:rgba(255,255,255,.09);--saffron:#ff7a1a;--saffron2:#ffb070;
   --display:"Archivo",system-ui,sans-serif;--body:"Geist",system-ui,sans-serif;
   --mono:"Geist Mono",ui-monospace,monospace;--serif:"Instrument Serif",Georgia,serif;
@@ -50,9 +50,14 @@ img{display:block;max-width:100%}
 /* ---------- NAV ---------- */
 .nav{position:fixed;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;justify-content:space-between;gap:20px;
   padding:20px var(--gut);transition:background .4s}
-.nav.solid{background:linear-gradient(180deg,rgba(5,5,5,.88),rgba(5,5,5,0))}
+.nav.solid{background:linear-gradient(180deg,rgba(0,0,0,.9),rgba(0,0,0,0))}
 .nav__logo{font-family:var(--display);font-variation-settings:"wdth" 125;font-weight:800;font-size:14px;letter-spacing:.02em}
-.nav__links{position:relative;display:flex;gap:44px;font-size:13px;letter-spacing:.04em;text-transform:uppercase;padding-bottom:10px}
+.nav__links{position:relative;display:flex;gap:40px;font-size:12px;letter-spacing:.06em;text-transform:uppercase}
+/* floating dock at the bottom: links + scroll progress line inside a dark glass pill */
+.dock{position:fixed;left:50%;bottom:clamp(14px,2.2vh,24px);z-index:55;transform:translateX(-50%);white-space:nowrap;
+  padding:13px 30px 19px;border-radius:999px;background:rgba(14,14,14,.72);border:1px solid rgba(255,255,255,.09);
+  -webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2);box-shadow:0 12px 40px rgba(0,0,0,.65)}
+.dock .nav__track{left:30px;right:30px;bottom:9px}
 .nav__links a{transition:color .3s}.nav__links a.active{color:var(--saffron);opacity:1}
 .nav__track{position:absolute;left:0;right:0;bottom:0;height:1px;background:rgba(255,255,255,.18)}
 .nav__track i{position:absolute;left:0;top:0;bottom:0;width:100%;background:var(--saffron);transform:scaleX(0);transform-origin:left}
@@ -66,10 +71,12 @@ img{display:block;max-width:100%}
 .sound.on .sound__bars i{animation:eq 1s ease-in-out infinite}
 .sound.on .sound__bars i:nth-child(2){animation-delay:-.3s}.sound.on .sound__bars i:nth-child(3){animation-delay:-.6s}.sound.on .sound__bars i:nth-child(4){animation-delay:-.15s}
 @keyframes eq{0%,100%{height:3px}50%{height:12px}}
-@media (max-width:760px){.nav__links{display:none}.sound__label{display:none}}
+@media (max-width:760px){.sound__label{display:none}.nav__links{gap:20px;font-size:11px;letter-spacing:.04em}
+  .dock{padding:11px 20px 17px}.dock .nav__track{left:20px;right:20px;bottom:8px}}
 
 /* ---------- HERO ---------- */
-.hero{position:relative;height:100vh;height:100svh;min-height:560px;overflow:hidden;background:radial-gradient(ellipse 60% 55% at 50% 42%,#1a1a1a 0%,#050505 70%)}
+.hero{position:relative;height:100vh;height:100svh;min-height:560px;overflow:hidden;
+  background:radial-gradient(circle at 50% var(--glowY,30%),#1c1c1c 0,#0c0c0c 15vmin,#030303 30vmin,#000 42vmin),#000}
 .hero__canvas{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:0}
 .hero__name{z-index:2}
 .hero__fallback{display:none;position:absolute;left:50%;bottom:0;height:88%;width:auto;transform:translateX(-50%);filter:grayscale(1) contrast(1.05)}
@@ -91,11 +98,6 @@ img{display:block;max-width:100%}
 .hero__line{max-width:300px;color:var(--muted);font-size:14px;text-align:right}
 .hero__scroll{position:absolute;left:var(--gut);bottom:24px;display:none}
 .hero__hint{position:absolute;right:var(--gut);top:50%;writing-mode:vertical-rl;font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
-.fcursor{position:absolute;left:0;top:0;z-index:3;display:flex;align-items:flex-start;gap:2px;pointer-events:none;will-change:transform}
-.fcursor svg{width:18px;height:18px}
-.fcursor span{margin-top:12px;padding:4px 10px;border-radius:999px 999px 999px 4px;font-size:12px;font-weight:600;color:#000;white-space:nowrap}
-.fcursor--a svg path{fill:#8ab4ff}.fcursor--a span{background:#8ab4ff}
-.fcursor--b svg path{fill:var(--saffron)}.fcursor--b span{background:var(--saffron)}
 @media (max-width:760px){
   .hero__top{top:70px}
   .hero__name h1{font-size:min(25vw,30vh)}
@@ -103,7 +105,8 @@ img{display:block;max-width:100%}
   .hero__line{text-align:center;font-size:13px}
   .hero__role{align-items:center}
   .hero__hint{display:none}
-  .fcursor{display:none}
+  .hero{--glowY:44%}
+  .hero__name{bottom:84px}
 }
 
 /* ---------- INTRO ---------- */
@@ -274,3 +277,6 @@ img{display:block;max-width:100%}
 .totop__ring{stroke:var(--saffron);stroke-linecap:round;stroke-dasharray:169.65;stroke-dashoffset:169.65}
 .totop span{position:relative;font-size:20px;transition:transform .35s}
 .totop:hover span{transform:translateY(-4px)}
+
+/* mobile: back-to-top sits above the dock */
+@media (max-width:760px){.totop{bottom:84px;width:50px;height:50px}}

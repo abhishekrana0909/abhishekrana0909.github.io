@@ -169,11 +169,6 @@ const Hero = (() => {
   const group = new THREE.Group(); scene.add(group);
   let points, rows = 1, aspectImg = 0.73;
 
-  const dustN = small() ? 220 : 500, dp = new Float32Array(dustN * 3);
-  for (let i = 0; i < dustN; i++) { dp[i * 3] = rand(-4, 4); dp[i * 3 + 1] = rand(-2.5, 2.5); dp[i * 3 + 2] = rand(-3, 1); }
-  const dustG = new THREE.BufferGeometry(); dustG.setAttribute('position', new THREE.BufferAttribute(dp, 3));
-  const dust = new THREE.Points(dustG, new THREE.PointsMaterial({ color: 0xffffff, size: 0.01, transparent: true, opacity: 0.3, depthWrite: false }));
-  scene.add(dust);
 
   const ready = new Promise(res => {
     const img = new Image(); img.src = 'images/abhishek-p.png';
@@ -245,7 +240,6 @@ const Hero = (() => {
     const px = cur.x, py = cur.y; cur.lerp(target, 0.18); uniforms.uMouse.value.copy(cur);
     const v = uniforms.uVel.value; v.x += ((cur.x - px) * 3 - v.x) * 0.2; v.y += ((cur.y - py) * 3 - v.y) * 0.2; v.clampLength(0, 0.12);
     uniforms.uMouseStr.value += (strT - uniforms.uMouseStr.value) * 0.06;
-    dust.rotation.y = t * 0.02; dust.position.y = Math.sin(t * 0.2) * 0.05;
     group.rotation.y = (mouse.x / innerWidth - 0.5) * 0.1; group.rotation.x = (mouse.y / innerHeight - 0.5) * -0.04;
     renderer.render(scene, camera);
   });
@@ -300,11 +294,12 @@ const heroH1 = $('#heroName');
 heroH1.classList.remove('chrome');
 const heroChars = splitChars($('span', heroH1), 'chrome');
 gsap.set(heroH1, { opacity: 0 });
-gsap.set(['.hero__sub', '.hero__top', '.hero__hint', '.fcursor'], { opacity: 0 });
+gsap.set(['.hero__sub', '.hero__top', '.hero__hint'], { opacity: 0 });
+gsap.set('#dock', { opacity: 0, y: 24 });
 
 function heroUI() {
   gsap.to(['.hero__sub', '.hero__top', '.hero__hint'], { opacity: 1, duration: 1, delay: 0.6, stagger: 0.12 });
-  gsap.to('.fcursor', { opacity: 1, duration: 0.6, delay: 2.4, stagger: 0.3 });
+  gsap.to('#dock', { opacity: 1, y: 0, duration: 0.9, delay: 1, ease: 'expo.out' });
   document.body.classList.remove('is-loading');
   lenis.start(); ScrollTrigger.sort(); ScrollTrigger.refresh();
 }
@@ -395,17 +390,6 @@ async function runLoader() {
   loader.remove();
   heroUI();
 }
-
-/* ================= FLOATING FIGMA CURSORS ================= */
-function wander(el, zone) {
-  const hero = $('#hero');
-  const go = () => {
-    const w = hero.clientWidth, h = hero.clientHeight;
-    gsap.to(el, { x: rand(zone[0], zone[1]) * w, y: rand(zone[2], zone[3]) * h, duration: rand(2.2, 3.8), ease: 'power1.inOut', onComplete: go });
-  };
-  gsap.set(el, { x: zone[0] * hero.clientWidth, y: zone[2] * hero.clientHeight }); go();
-}
-wander($('#fcA'), [0.08, 0.3, 0.3, 0.55]); wander($('#fcB'), [0.66, 0.86, 0.25, 0.5]);
 
 /* ================= HERO SCROLL ================= */
 gsap.to('.hero__name', { yPercent: -40, opacity: 0, ease: 'none', scrollTrigger: { trigger: '#hero', start: 'top top', end: 'bottom top', scrub: true } });
