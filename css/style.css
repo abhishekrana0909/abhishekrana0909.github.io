@@ -289,3 +289,6 @@ img{display:block;max-width:100%}
 
 /* Dubai panel photo (Pexels, sovianna 10967626), in colour, a little dimmed */
 .jbg--burj img{opacity:.6;object-position:45% 55%}
+
+/* intro: floor shadows under the falling letters */
+.drop-shadow{position:absolute;left:0;top:0;width:clamp(50px,7vw,120px);height:clamp(8px,1vw,16px);margin:-6px 0 0 calc(clamp(50px,7vw,120px)/-2);border-radius:50%;background:radial-gradient(ellipse at center,rgba(255,255,255,.22) 0,rgba(255,255,255,.06) 45%,rgba(255,255,255,0) 70%);pointer-events:none;opacity:0;z-index:0}

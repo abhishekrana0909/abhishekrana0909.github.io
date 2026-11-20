@@ -73,10 +73,10 @@ const Sound = (() => {
       nz('bandpass', 1800, t + 0.004, 0.03, 0.05, 6);
       if (final) { osc('square', 220, t + 0.02, 0.12, 0.03, 110); osc('sine', 1760, t + 0.03, 0.25, 0.02); }
     },
-    fx(name, vol = 0.8, rate = 1) {
+    fx(name, vol = 0.8, rate = 1, offset = 0) {
       if (!ok() || !fxBuf[name]) return;
-      const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = fxBuf[name]; g.gain.value = vol; src.playbackRate.value = rate;
-      src.connect(g).connect(out); src.start(ctx.currentTime + 0.002);
+      const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = fxBuf[name]; g.gain.value = Math.min(1, vol); src.playbackRate.value = rate;
+      src.connect(g).connect(out); src.start(ctx.currentTime + 0.002, offset);
     },
     // once, when PORTFOLIO is fully typed
     confirm() { if (ok() && keys) playPart(CONF_AT, CONF_LEN, 0.55); },
@@ -378,65 +378,94 @@ async function runLoader() {
   const c = { v: 0 };
   gsap.to(c, { v: 100, duration: 6, ease: 'power1.inOut', onUpdate: () => { count.textContent = String(Math.round(c.v)).padStart(3, '0'); } });
 
-  // 1. ABHISHEK drops in all at once, scattered and tilted; dust + shake on landing; then the letters pull back into the word
+  // 1. ABHISHEK is thrown down letter by letter onto a floor: real rigid bodies (Matter.js) that collide, tumble and pile up.
+  //    Sound, dust and shake come from the engine's collision events, so they land exactly on each hit.
   gsap.to(glow, { scale: 0.3, opacity: 0, duration: 0.4 });
   word.className = 'loader__word name'; gsap.set(word, { opacity: 1, filter: 'none' });
   word.textContent = 'ABHISHEK';
   const chs = splitChars(word, 'chrome');
   chs.forEach(s => { s.style.opacity = 0; });
   await Promise.race([document.fonts.load(getComputedStyle(word).font, 'ABHISHEK').catch(() => {}), wait(0.8)]);
-  const fs = parseFloat(getComputedStyle(word).fontSize), W = innerWidth, H = innerHeight, n = chs.length;
-  const rects = chs.map(s => s.getBoundingClientRect());
-  const mob = W < 761, floorY = mob ? H * 0.68 : Math.min(H * 0.78, rects[0].top + rects[0].height / 2 + fs * 1.4);        // where the letters come to rest
-  const slots = gsap.utils.shuffle([...Array(n).keys()]), spanW = mob ? W * 0.94 : Math.min(W * 0.86, fs * 5.6);
-  const land = chs.map((s, i) => {
-    const r = rects[i], cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    const lx = W / 2 - spanW / 2 + (slots[i] + 0.5) * spanW / n + rand(-fs * 0.12, fs * 0.12);
-    return { x: lx - cx, y: floorY - cy + rand(-fs * 0.06, fs * 0.06), rot: (Math.random() < 0.5 ? -1 : 1) * rand(10, 80) };
-  });
-  // one after another; each lands, bounces, skids and spins to rest (a tiny physics sim per letter)
-  const GAP = 0.13, FALL = 0.55, lastLand = (n - 1) * GAP + FALL;
-  gsap.delayedCall(lastLand - 0.93, () => Sound.fx('impact', 0.85));   // the big hit's peak = the last landing
-  Sound.fx('fall', 0.5);
-  const g = fs * 38, wallL = fs * 0.7, wallR = W - fs * 0.7;
-  const settle = (s, i) => new Promise(done => {
-    const r = rects[i], cx0 = r.left + r.width / 2, st = { x: land[i].x, y: land[i].y, rot: land[i].rot,
-      vx: (Math.random() < 0.5 ? -1 : 1) * rand(fs * 1.2, fs * 3), vy: -rand(fs * 6.5, fs * 9.5), av: rand(-280, 280) };
-    let lastT = performance.now(), bounces = 0;
-    const tick = () => {
-      const now = performance.now(), dt = Math.min(0.033, (now - lastT) / 1000); lastT = now;
-      st.vy += g * dt; st.x += st.vx * dt; st.y += st.vy * dt; st.rot += st.av * dt;
-      const cx = cx0 + st.x;
-      if (cx < wallL || cx > wallR) { st.vx = -st.vx * 0.5; st.x = (cx < wallL ? wallL : wallR) - cx0; }
-      if (st.y >= land[i].y) {                                          // floor
-        st.y = land[i].y;
-        if (Math.abs(st.vy) > fs * 1.6 && bounces < 3) {
-          bounces++; st.vy = -st.vy * 0.4; st.vx *= 0.72; st.av *= 0.55;
-          if (bounces === 1) dustBurst(loader, [[cx, floorY + fs * 0.32]], fs, 0.25);
-        } else {
-          st.vy = 0; st.vx *= 1 - Math.min(1, 7 * dt); st.av *= 1 - Math.min(1, 9 * dt);
-          if (Math.abs(st.vx) < 3 && Math.abs(st.av) < 5) { gsap.ticker.remove(tick); land[i] = { x: st.x, y: st.y, rot: st.rot }; done(); }
+  const fs = parseFloat(getComputedStyle(word).fontSize), W = innerWidth, H = innerHeight, n = chs.length, mob = W < 761;
+  const rects = chs.map(s => s.getBoundingClientRect()), home = rects.map(r => [r.left + r.width / 2, r.top + r.height / 2]);
+  const floorY = mob ? H * 0.7 : Math.min(H * 0.8, home[0][1] + fs * 1.5);   // the floor line (letters rest on it)
+  // floor shadows: one soft ellipse per letter, darker and tighter as the letter gets close
+  const shadows = chs.map(() => { const d = document.createElement('i'); d.className = 'drop-shadow'; loader.appendChild(d); return d; });
+  if (window.Matter) {
+    const { Engine, Bodies, Body, Composite, Events } = Matter;
+    const engine = Engine.create({ gravity: { x: 0, y: 2.6 }, positionIterations: 10, velocityIterations: 8 });
+    const T = 200;                                                               // thick static walls
+    Composite.add(engine.world, [
+      Bodies.rectangle(W / 2, floorY + T / 2, W * 3, T, { isStatic: true, friction: 0.9, label: 'floor' }),
+      Bodies.rectangle(-T / 2 + 4, H / 2, T, H * 4, { isStatic: true, label: 'wall' }),
+      Bodies.rectangle(W + T / 2 - 4, H / 2, T, H * 4, { isStatic: true, label: 'wall' })]);
+    const capH = fs * 0.7;
+    const bodies = chs.map((s, i) => {
+      const w = Math.max(fs * 0.18, rects[i].width * 0.9);
+      const b = Bodies.rectangle(-999, -999, w, capH, { chamfer: { radius: Math.min(w, capH) * 0.12 }, density: 0.004, restitution: 0.28, friction: 0.55, frictionAir: 0.008, label: 'L' + i });
+      b.plugin = { i, lastHit: 0 }; return b;
+    });
+    // spawn spots: spread across the width, shuffled, so the pile isn't in reading order
+    const lanes = gsap.utils.shuffle([...Array(n).keys()]), spread = mob ? W * 0.7 : Math.min(W * 0.5, fs * 3.8);
+    const GAP = 0.12;
+    let firstFloorHit = true;
+    Events.on(engine, 'collisionStart', ev => {
+      const now = performance.now();
+      for (const pr of ev.pairs) {
+        const A = pr.bodyA, B = pr.bodyB, L = A.label[0] === 'L' ? A : B, other = L === A ? B : A;
+        if (L.label[0] !== 'L') continue;
+        const nrm = pr.collision.normal, rv = { x: A.velocity.x - B.velocity.x, y: A.velocity.y - B.velocity.y };
+        const impact = Math.abs(rv.x * nrm.x + rv.y * nrm.y);                      // px per step along the contact normal
+        if (impact < 1.2 || now - L.plugin.lastHit < 90) continue;
+        L.plugin.lastHit = now;
+        const k = Math.min(1, impact / 22), sp = pr.collision.supports[0] || L.position;
+        if (other.label === 'floor') {
+          if (firstFloorHit && impact > 8) { firstFloorHit = false; Sound.fx('impact', 0.75, 1, 0.86); }   // the big boom, started at its peak
+          Sound.fx('dust', 0.25 + k * 0.6, rand(0.88, 1.12));
+          if (impact > 4) dustBurst(loader, [[sp.x, floorY]], fs, 0.25 + k * 0.7);
+          if (impact > 6) shake(loader, Math.min(18, fs * 0.09) * k, 5);
+          gsap.fromTo(chs[L.plugin.i], { scaleX: 1 + 0.1 * k, scaleY: 1 - 0.12 * k }, { scaleX: 1, scaleY: 1, duration: 0.35, ease: 'elastic.out(1, 0.4)' });
+        } else if (other.label[0] === 'L') {
+          Sound.fx('snap', 0.08 + k * 0.3, rand(1.15, 1.45));                       // letter-on-letter clack
         }
       }
-      gsap.set(s, { x: st.x, y: st.y, rotation: st.rot });
-    };
-    gsap.ticker.add(tick);
-  });
-  const rested = chs.map((s, i) => new Promise(res => {
-    gsap.delayedCall(i * GAP, () => {
-      s.style.opacity = 1;
-      gsap.fromTo(s, { x: land[i].x + rand(-W * 0.1, W * 0.1), y: -rects[i].bottom - rand(60, H * 0.35), rotation: rand(-200, 200) },
-        { x: land[i].x, y: land[i].y, rotation: land[i].rot, duration: FALL, ease: 'power2.in', onComplete: () => {
-          const last = i === n - 1, x = rects[i].left + rects[i].width / 2 + land[i].x;
-          Sound.fx('dust', last ? 0.8 : 0.45, rand(0.9, 1.12));
-          dustBurst(loader, [[x, floorY + fs * 0.32]], fs, last ? 1.2 : 0.6);
-          shake(loader, last ? Math.min(22, fs * 0.1) : fs * 0.03, last ? 9 : 4);
-          settle(s, i).then(res);
-        } });
     });
-  }));
-  await Promise.race([Promise.all(rested), wait(lastLand + 2.2)]);
-  await wait(0.2);
+    chs.forEach((s, i) => gsap.delayedCall(i * GAP, () => {
+      const b = bodies[i], x = W / 2 - spread / 2 + (lanes[i] + 0.5) * spread / n + rand(-fs * 0.1, fs * 0.1);
+      Body.setPosition(b, { x, y: -capH - rand(20, 120) });
+      Body.setAngle(b, rand(-0.6, 0.6));
+      Body.setVelocity(b, { x: rand(-3, 3), y: rand(4, 8) });
+      Body.setAngularVelocity(b, rand(-0.18, 0.18));
+      Composite.add(engine.world, b);
+      s.style.opacity = 1;
+      Sound.fx('fall', 0.18, rand(0.9, 1.15));
+    }));
+    // step the engine on the GSAP ticker (fixed 60 Hz sub-steps) and mirror every body onto its letter + shadow
+    await new Promise(done => {
+      let acc = 0, still = 0, t0 = performance.now(), last = t0;
+      const tick = () => {
+        const now = performance.now(); acc += Math.min(50, now - last); last = now;
+        while (acc >= 1000 / 60) { Engine.update(engine, 1000 / 60); acc -= 1000 / 60; }
+        let moving = false;
+        bodies.forEach((b, i) => {
+          if (b.position.x < -500) return;
+          gsap.set(chs[i], { x: b.position.x - home[i][0], y: b.position.y - home[i][1], rotation: b.angle * 180 / Math.PI });
+          const hgt = Math.max(0, floorY - b.position.y - capH / 2), near = Math.max(0, 1 - hgt / (H * 0.6));
+          gsap.set(shadows[i], { x: b.position.x, y: floorY, scaleX: 0.5 + near * 0.6, opacity: 0.15 + near * 0.55 });
+          if (b.speed > 0.5 || Math.abs(b.angularVelocity) > 0.015) moving = true;
+        });
+        const allIn = (now - t0) / 1000 > (n - 1) * GAP + 0.3;
+        still = allIn && !moving ? still + 1 : 0;
+        if (still > 10 || now - t0 > ((n - 1) * GAP + 2.4) * 1000) { gsap.ticker.remove(tick); done(); }
+      };
+      gsap.ticker.add(tick);
+    });
+  } else {                                                                       // no engine: a simple drop into place
+    chs.forEach((s, i) => { s.style.opacity = 1; gsap.from(s, { y: -H, rotation: rand(-90, 90), duration: 0.6, delay: i * 0.08, ease: 'power2.in' }); });
+    await wait(1.4);
+  }
+  gsap.to(shadows, { opacity: 0, duration: 0.5, onComplete: () => shadows.forEach(d => d.remove()) });
+  await wait(0.15);
   // 2. the letters lift and swirl home, centre first; the swirl sound peaks as the last one locks
   Sound.fx('gather', 0.7);
   await wait(0.19);
