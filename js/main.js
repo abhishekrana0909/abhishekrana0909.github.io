@@ -310,23 +310,8 @@ async function typeLetter(span, ch, final = false) {
   gsap.fromTo(span, { filter: 'brightness(2.2)' }, { filter: 'brightness(1)', duration: 0.35 });
 }
 
-/* sci-fi blaster, drawn facing right in a 200x90 box; the muzzle is at (196, 30) */
-const GUN_SVG = `<svg viewBox="0 0 200 90" aria-hidden="true">
-  <defs>
-    <linearGradient id="gunChrome" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".22" stop-color="#ececec"/>
-      <stop offset=".45" stop-color="#bcbcbc"/><stop offset=".6" stop-color="#808080"/><stop offset=".76" stop-color="#a6a6a6"/><stop offset="1" stop-color="#e4e4e4"/></linearGradient>
-    <linearGradient id="gunDark" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5c5c5c"/><stop offset="1" stop-color="#1a1a1a"/></linearGradient>
-  </defs>
-  <path d="M44 46 L76 46 L70 84 Q69 88 65 88 L40 88 Q35 88 36 83 Z" fill="url(#gunDark)" stroke="#9a9a9a" stroke-width=".8"/>
-  <path d="M76 50 Q92 50 92 62 Q92 70 82 70 L74 70" fill="none" stroke="#c4c4c4" stroke-width="3" stroke-linecap="round"/>
-  <path d="M14 18 Q14 12 20 12 L132 12 L146 20 L146 44 Q146 48 142 48 L24 48 Q14 48 14 40 Z" fill="url(#gunChrome)" stroke="#8e8e8e" stroke-width=".8"/>
-  <path d="M40 12 L45 5 L97 5 L102 12" fill="url(#gunChrome)" stroke="#8e8e8e" stroke-width=".8"/>
-  <rect x="140" y="22" width="48" height="16" rx="3" fill="url(#gunChrome)" stroke="#8e8e8e" stroke-width=".8"/>
-  <rect x="184" y="18" width="12" height="24" rx="2.5" fill="url(#gunDark)" stroke="#c4c4c4" stroke-width=".8"/>
-  <rect class="gun__cell" x="30" y="27" width="96" height="5" rx="2.5" fill="#ff7a1a"/>
-  <g stroke="#6c6c6c" stroke-width="2" stroke-linecap="round"><path d="M112 38 L120 38"/><path d="M112 42 L124 42"/>
-    <path d="M152 26 L152 34"/><path d="M160 26 L160 34"/><path d="M168 26 L168 34"/></g>
-</svg>`;
+/* real AK-47 (Pixabay 872500, background removed), facing right; the muzzle sits 22.3% down the image */
+const RIFLE = { src: 'images/rifle.webp', aspect: 3.49, muzzleY: 0.223 };
 function flashAt(parent, x, y, dir) {
   const f = document.createElement('i'); f.className = 'gun-flash'; parent.appendChild(f);
   gsap.set(f, { left: x, top: y, xPercent: -50, yPercent: -50, rotation: dir < 0 ? 180 : 0 });
@@ -336,6 +321,7 @@ function flashAt(parent, x, y, dir) {
 async function runLoader() {
   const loader = $('#loader'), word = $('#loaderWord'), glow = $('.loader__glow'), count = $('#loaderCount');
   const gate = $('#gate');
+  const rifleImg = new Image(); rifleImg.src = RIFLE.src;   // loads while the gate waits
   if (reduce) { loader.remove(); gsap.set(heroH1, { opacity: 1 }); await Hero.ready; Hero.intro(); heroUI(); return; }
 
   // click to enter (browsers only allow sound after a click)
@@ -353,28 +339,30 @@ async function runLoader() {
   const c = { v: 0 };
   gsap.to(c, { v: 100, duration: 6, ease: 'power1.inOut', onUpdate: () => { count.textContent = String(Math.round(c.v)).padStart(3, '0'); } });
 
-  // 1. a sci-fi blaster drops in and fires ABHISHEK out of itself: A, B, H to the left, then K, E, H, S to the right
+  // 1. a real rifle drops in below the word and fires ABHISHEK out of itself: A, B, H to the left, then K, E, H, S to the right
   gsap.to(glow, { scale: 0.3, opacity: 0, duration: 0.4 });
   word.className = 'loader__word name'; gsap.set(word, { opacity: 1, filter: 'none' });
   word.textContent = 'ABHISHEK';
   const chs = splitChars(word, 'chrome');
   chs.forEach(s => { s.style.opacity = 0; });
-  await Promise.race([document.fonts.load(getComputedStyle(word).font, 'ABHISHEK').catch(() => {}), wait(0.8)]);
-  const fs = parseFloat(getComputedStyle(word).fontSize), ir = chs[3].getBoundingClientRect();
-  const capTop = ir.top + ir.height / 2 - fs * 0.35;                 // Bebas caps are ~0.7em tall
-  const gunW = Math.min(fs * (innerWidth < 761 ? 1.8 : 1.25), innerWidth * 0.42), gunH = gunW * 0.45, gx = ir.left + ir.width / 2, gy = capTop - gunH * 0.85;
-  const gun = document.createElement('div'); gun.className = 'gun'; gun.innerHTML = GUN_SVG; gun.style.width = gunW + 'px';
+  await Promise.race([Promise.all([document.fonts.load(getComputedStyle(word).font, 'ABHISHEK').catch(() => {}), rifleImg.decode().catch(() => {})]), wait(1)]);
+  const fs = parseFloat(getComputedStyle(word).fontSize), ir = chs[3].getBoundingClientRect(), mob = innerWidth < 761;
+  const capBottom = ir.top + ir.height / 2 + fs * 0.35;              // Bebas caps are ~0.7em tall
+  const gunW = Math.min(fs * (mob ? 3.2 : 2.3), innerWidth * (mob ? 0.62 : 0.5)), gunH = gunW / RIFLE.aspect;
+  const gx = ir.left + ir.width / 2, gy = capBottom + fs * 0.2 + gunH / 2;
+  const gun = document.createElement('div'); gun.className = 'gun';
+  gun.innerHTML = `<img src="${RIFLE.src}" alt="" width="1267" height="363">`; gun.style.width = gunW + 'px';
   loader.appendChild(gun);
-  gsap.set(gun, { xPercent: -50, yPercent: -50, x: gx, y: -gunH * 1.5, rotation: -28 });
-  await gsap.to(gun, { y: gy, rotation: 0, duration: 0.55, ease: 'power2.in' });          // falls
-  gsap.fromTo(loader, { y: 7 }, { y: 0, duration: 0.25, ease: 'power3.out' });
-  await gsap.to(gun, { keyframes: [{ y: gy - gunH * 0.3, rotation: 6, duration: 0.13, ease: 'power2.out' }, { y: gy, rotation: 0, duration: 0.2, ease: 'bounce.out' }] });
+  gsap.set(gun, { xPercent: -50, yPercent: -50, x: gx, y: -gunH * 2, rotation: -22 });
+  await gsap.to(gun, { y: gy, rotation: 0, duration: 0.6, ease: 'power2.in' });          // falls
+  gsap.fromTo(loader, { y: 8 }, { y: 0, duration: 0.25, ease: 'power3.out' });
+  await gsap.to(gun, { keyframes: [{ y: gy - gunH * 0.35, rotation: 4, duration: 0.13, ease: 'power2.out' }, { y: gy, rotation: 0, duration: 0.2, ease: 'bounce.out' }] });
   const fire = async (i, dir) => {
-    const gr = gun.getBoundingClientRect(), mx = dir > 0 ? gr.right - gr.width * 0.02 : gr.left + gr.width * 0.02, my = gr.top + gr.height * (30 / 90);
+    const gr = gun.getBoundingClientRect(), mx = dir > 0 ? gr.right - gr.width * 0.02 : gr.left + gr.width * 0.02, my = gr.top + gr.height * RIFLE.muzzleY;
     const s = chs[i], r = s.getBoundingClientRect();
     s.style.opacity = 1; Sound.type();
     flashAt(loader, mx, my, dir);
-    gsap.fromTo(gun, { x: gx - dir * gunW * 0.08, rotation: -dir * 9 }, { x: gx, rotation: 0, duration: 0.24, ease: 'power3.out' });   // recoil
+    gsap.fromTo(gun, { x: gx - dir * gunW * 0.06, rotation: -dir * 4 }, { x: gx, rotation: 0, duration: 0.24, ease: 'power3.out' });   // recoil
     gsap.fromTo(loader, { x: rand(-6, 6), y: rand(-5, 5) }, { x: 0, y: 0, duration: 0.2, ease: 'power3.out' });                        // shake
     await gsap.fromTo(s, { x: mx - (r.left + r.width / 2), y: my - (r.top + r.height / 2), scaleX: 1.8, scaleY: 0.5, filter: 'blur(5px)' },
       { x: 0, y: 0, scaleX: 1, scaleY: 1, filter: 'blur(0px)', duration: 0.2, ease: 'power4.out' });
@@ -387,7 +375,7 @@ async function runLoader() {
   for (const i of [7, 6, 5, 4]) await fire(i, 1);
   // the blaster stands up and becomes the real I
   const ir2 = chs[3].getBoundingClientRect();
-  await gsap.to(gun, { x: ir2.left + ir2.width / 2, y: ir2.top + ir2.height / 2, rotation: -90, scaleX: (fs * 0.72) / gunW, scaleY: (fs * 0.72) / gunW * 0.35, duration: 0.42, ease: 'power3.inOut' });
+  await gsap.to(gun, { x: ir2.left + ir2.width / 2, y: ir2.top + ir2.height / 2, rotation: -90, scaleX: (fs * 0.72) / gunW, scaleY: (fs * 0.72) / gunW * 0.8, duration: 0.42, ease: 'power3.inOut' });
   chs[3].style.opacity = 1; Sound.type();
   flashAt(loader, ir2.left + ir2.width / 2, ir2.top + ir2.height / 2, 1);
   gsap.to(gun, { opacity: 0, duration: 0.16, onComplete: () => gun.remove() });
