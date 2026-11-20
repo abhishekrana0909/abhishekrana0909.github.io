@@ -75,8 +75,7 @@ const Sound = (() => {
     slide() {
       if (!ok()) return;
       const t = ctx.currentTime + 0.002;
-      nz('bandpass', 500, t, 0.45, 0.06, 1.2, 2600);
-      osc('square', 1318.5, t + 0.05, 0.05, 0.025); osc('square', 1760, t + 0.1, 0.06, 0.02);
+      nz('bandpass', 500, t, 0.45, 0.06, 1.2, 2600);   // whoosh only (the two beeps were removed on request)
     },
   };
 })();
