@@ -71,7 +71,6 @@ const Sound = (() => {
     },
     // once, when PORTFOLIO is fully typed
     confirm() { if (ok() && keys) playPart(CONF_AT, CONF_LEN, 0.55); },
-    sweep() { if (!ok()) return; const t = ctx.currentTime + 0.002; osc('sawtooth', 180, t, 0.55, 0.02, 1400); nz('bandpass', 400, t, 0.55, 0.05, 2, 3800); },
     slide() {
       if (!ok()) return;
       const t = ctx.currentTime + 0.002;
@@ -385,7 +384,6 @@ async function runLoader() {
   pchs.forEach((s, i) => { if (i !== 7) s.style.opacity = 0; });
   const x1 = pchs[7].getBoundingClientRect().left;
   gsap.set(pchs[7], { x: x0 - x1 });
-  Sound.sweep();
   await gsap.to(pchs[7], { x: 0, duration: 0.75, ease: 'expo.inOut' });
 
   // 4. the rest of PORTFOLIO types in around the I
