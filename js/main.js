@@ -73,9 +73,9 @@ const Sound = (() => {
       nz('bandpass', 1800, t + 0.004, 0.03, 0.05, 6);
       if (final) { osc('square', 220, t + 0.02, 0.12, 0.03, 110); osc('sine', 1760, t + 0.03, 0.25, 0.02); }
     },
-    fx(name, vol = 0.8) {
+    fx(name, vol = 0.8, rate = 1) {
       if (!ok() || !fxBuf[name]) return;
-      const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = fxBuf[name]; g.gain.value = vol;
+      const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = fxBuf[name]; g.gain.value = vol; src.playbackRate.value = rate;
       src.connect(g).connect(out); src.start(ctx.currentTime + 0.002);
     },
     // once, when PORTFOLIO is fully typed
@@ -320,7 +320,7 @@ async function typeLetter(span, ch, final = false) {
 }
 
 /* dust kicked up where the letters land: a short-lived canvas of soft grains and puffs */
-function dustBurst(parent, points, fs) {
+function dustBurst(parent, points, fs, amount = 1) {
   const cv = document.createElement('canvas'), dpr = Math.min(devicePixelRatio, 2), W = innerWidth, H = innerHeight;
   cv.className = 'dust-burst'; cv.width = W * dpr; cv.height = H * dpr; parent.appendChild(cv);
   const c = cv.getContext('2d'); c.scale(dpr, dpr);
@@ -330,11 +330,11 @@ function dustBurst(parent, points, fs) {
   dg.addColorStop(0, 'rgba(214,206,194,1)'); dg.addColorStop(1, 'rgba(214,206,194,0)'); dc.fillStyle = dg; dc.fillRect(0, 0, 64, 64);
   const ps = [];
   points.forEach(([x, y]) => {
-    for (let k = 0; k < 34; k++) {                                   // grains
+    for (let k = 0; k < Math.round(34 * amount); k++) {              // grains
       const dir = Math.random() < 0.5 ? -1 : 1;
       ps.push({ x: x + rand(-fs * 0.2, fs * 0.2), y, vx: dir * rand(40, 300), vy: -rand(30, 230), r: rand(0.8, 2.6), life: rand(0.6, 1.4), t: 0, a: rand(0.5, 0.9), g: 260 });
     }
-    for (let k = 0; k < 5; k++)                                       // soft clouds
+    for (let k = 0; k < Math.max(2, Math.round(5 * amount)); k++)    // soft clouds
       ps.push({ x: x + rand(-fs * 0.3, fs * 0.3), y: y - rand(0, fs * 0.15), vx: rand(-60, 60), vy: -rand(10, 50), r: rand(fs * 0.15, fs * 0.3), grow: rand(fs * 0.5, fs * 1.1), life: rand(1, 1.7), t: 0, a: rand(0.12, 0.22), g: 0, cloud: true });
   });
   let last = performance.now();
@@ -394,29 +394,57 @@ async function runLoader() {
     const lx = W / 2 - spanW / 2 + (slots[i] + 0.5) * spanW / n + rand(-fs * 0.12, fs * 0.12);
     return { x: lx - cx, y: floorY - cy + rand(-fs * 0.06, fs * 0.06), rot: (Math.random() < 0.5 ? -1 : 1) * rand(10, 80) };
   });
-  Sound.fx('impact', 0.9);                                    // its build-up peaks 0.93 s in: on the landing
-  await wait(0.28);
-  Sound.fx('fall', 0.55);
-  chs.forEach((s, i) => {
-    s.style.opacity = 1;
-    gsap.fromTo(s, { x: land[i].x + rand(-W * 0.12, W * 0.12), y: -rects[i].bottom - rand(60, H * 0.45), rotation: rand(-200, 200) },
-      { x: land[i].x, y: land[i].y, rotation: land[i].rot, duration: 0.65, ease: 'power2.in' });   // same time for all: they land together
+  // one after another; each lands, bounces, skids and spins to rest (a tiny physics sim per letter)
+  const GAP = 0.13, FALL = 0.55, lastLand = (n - 1) * GAP + FALL;
+  gsap.delayedCall(lastLand - 0.93, () => Sound.fx('impact', 0.85));   // the big hit's peak = the last landing
+  Sound.fx('fall', 0.5);
+  const g = fs * 38, wallL = fs * 0.7, wallR = W - fs * 0.7;
+  const settle = (s, i) => new Promise(done => {
+    const r = rects[i], cx0 = r.left + r.width / 2, st = { x: land[i].x, y: land[i].y, rot: land[i].rot,
+      vx: (Math.random() < 0.5 ? -1 : 1) * rand(fs * 1.2, fs * 3), vy: -rand(fs * 6.5, fs * 9.5), av: rand(-280, 280) };
+    let lastT = performance.now(), bounces = 0;
+    const tick = () => {
+      const now = performance.now(), dt = Math.min(0.033, (now - lastT) / 1000); lastT = now;
+      st.vy += g * dt; st.x += st.vx * dt; st.y += st.vy * dt; st.rot += st.av * dt;
+      const cx = cx0 + st.x;
+      if (cx < wallL || cx > wallR) { st.vx = -st.vx * 0.5; st.x = (cx < wallL ? wallL : wallR) - cx0; }
+      if (st.y >= land[i].y) {                                          // floor
+        st.y = land[i].y;
+        if (Math.abs(st.vy) > fs * 1.6 && bounces < 3) {
+          bounces++; st.vy = -st.vy * 0.4; st.vx *= 0.72; st.av *= 0.55;
+          if (bounces === 1) dustBurst(loader, [[cx, floorY + fs * 0.32]], fs, 0.25);
+        } else {
+          st.vy = 0; st.vx *= 1 - Math.min(1, 7 * dt); st.av *= 1 - Math.min(1, 9 * dt);
+          if (Math.abs(st.vx) < 3 && Math.abs(st.av) < 5) { gsap.ticker.remove(tick); land[i] = { x: st.x, y: st.y, rot: st.rot }; done(); }
+        }
+      }
+      gsap.set(s, { x: st.x, y: st.y, rotation: st.rot });
+    };
+    gsap.ticker.add(tick);
   });
-  await wait(0.65);
-  Sound.fx('dust', 0.75);
-  dustBurst(loader, chs.map((s, i) => [rects[i].left + rects[i].width / 2 + land[i].x, floorY + fs * 0.32]), fs);
-  shake(loader, Math.min(22, fs * 0.1));
-  chs.forEach((s, i) => gsap.to(s, { keyframes: [
-    { y: land[i].y - rand(fs * 0.1, fs * 0.28), rotation: land[i].rot + rand(-10, 10), duration: 0.14, ease: 'power2.out' },
-    { y: land[i].y, rotation: land[i].rot, duration: 0.32, ease: 'bounce.out' }] }));
-  await wait(0.7);
+  const rested = chs.map((s, i) => new Promise(res => {
+    gsap.delayedCall(i * GAP, () => {
+      s.style.opacity = 1;
+      gsap.fromTo(s, { x: land[i].x + rand(-W * 0.1, W * 0.1), y: -rects[i].bottom - rand(60, H * 0.35), rotation: rand(-200, 200) },
+        { x: land[i].x, y: land[i].y, rotation: land[i].rot, duration: FALL, ease: 'power2.in', onComplete: () => {
+          const last = i === n - 1, x = rects[i].left + rects[i].width / 2 + land[i].x;
+          Sound.fx('dust', last ? 0.8 : 0.45, rand(0.9, 1.12));
+          dustBurst(loader, [[x, floorY + fs * 0.32]], fs, last ? 1.2 : 0.6);
+          shake(loader, last ? Math.min(22, fs * 0.1) : fs * 0.03, last ? 9 : 4);
+          settle(s, i).then(res);
+        } });
+    });
+  }));
+  await Promise.race([Promise.all(rested), wait(lastLand + 2.2)]);
+  await wait(0.2);
   // 2. the letters lift and swirl home, centre first; the swirl sound peaks as the last one locks
   Sound.fx('gather', 0.7);
   await wait(0.19);
   const homeOrder = [3, 4, 2, 5, 1, 6, 0, 7], tl = gsap.timeline();
   chs.forEach((s, i) => {
     const d = homeOrder.indexOf(i) * 0.05;
-    tl.to(s, { y: land[i].y - fs * 0.55, x: land[i].x * 0.85, rotation: land[i].rot * 0.4, duration: 0.3, ease: 'power2.out' }, d)
+    const x0 = gsap.getProperty(s, 'x'), y0 = gsap.getProperty(s, 'y'), r0 = gsap.getProperty(s, 'rotation');
+    tl.to(s, { y: y0 - fs * 0.55, x: x0 * 0.85, rotation: r0 * 0.4, duration: 0.3, ease: 'power2.out' }, d)
       .to(s, { x: 0, y: 0, rotation: 0, duration: 0.6, ease: 'expo.inOut' }, d + 0.3);
   });
   gsap.delayedCall(tl.duration() - 0.09, () => Sound.fx('snap', 0.55));   // the clank's peak on the lock
